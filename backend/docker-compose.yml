@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: trading_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-trading}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trading123}
+      POSTGRES_DB: ${POSTGRES_DB:-trading_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trading} -d ${POSTGRES_DB:-trading_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: trading_redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Trading Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading_backend
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-trading}:${POSTGRES_PASSWORD:-trading123}@postgres:5432/${POSTGRES_DB:-trading_db}
+      - REDIS_URL=redis://redis:6379/0
+      - BROKER_NAME=${BROKER_NAME:-angelone}
+      - ANGELONE_API_KEY=${ANGELONE_API_KEY}
+      - ANGELONE_CLIENT_ID=${ANGELONE_CLIENT_ID}
+      - ANGELONE_PASSWORD=${ANGELONE_PASSWORD}
+      - ANGELONE_TOTP_SECRET=${ANGELONE_TOTP_SECRET}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - RATE_LIMIT_REQUESTS=${RATE_LIMIT_REQUESTS:-100}
+      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW:-60}
+      - CACHE_TTL=${CACHE_TTL:-300}
+      - OPTION_CHAIN_CACHE_TTL=${OPTION_CHAIN_CACHE_TTL:-30}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    command: >
+      sh -c "
+        echo 'Running database migrations...' &&
+        alembic upgrade head &&
+        echo 'Starting backend server...' &&
+        python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+      "
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: trading_network
