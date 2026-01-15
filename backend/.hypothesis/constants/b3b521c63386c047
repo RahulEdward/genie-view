@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\api\v1\market.py
+# hypothesis_version: 6.150.0
+
+[1000, '%Y-%m-%d %H:%M', '/holidays', '/status', '/timings', 'BFO', 'BSE', 'CDS', 'Holiday', 'INTERNAL_ERROR', 'MCX', 'NFO', 'NSE', 'TRADING_HOLIDAY', 'closes_at', 'code', 'date', 'day', 'error', 'exchange', 'is_open', 'market_close', 'market_open', 'message', 'next_open', 'opens_at', 'status', 'success']

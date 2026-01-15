@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\utils\logger.py
+# hypothesis_version: 6.150.0
+
+['10 MB', '50 MB', '7 days', 'ERROR', 'INFO', 'logger', 'logs/app.log', 'logs/error.log', 'setup_logger']

@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\api\v1\router.py
+# hypothesis_version: 6.150.0
+
+['/auth', '/expiry', '/greeks', '/history', '/market', '/optionchain', '/quotes', '/search', 'Authentication', 'Expiry', 'Greeks', 'Historical Data', 'Market', 'Option Chain', 'Quotes', 'Search']

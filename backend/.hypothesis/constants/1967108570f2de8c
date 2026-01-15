@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\websocket\manager.py
+# hypothesis_version: 6.150.0
+
+['Connection not found', 'NSE', 'connected', 'connection_id', 'data', 'error', 'exchange', 'message', 'pong', 'subscribed', 'success', 'symbol', 'symbol_key', 'tick', 'total_subscriptions', 'type', 'unsubscribed']

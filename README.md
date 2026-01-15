@@ -1,102 +1,163 @@
-# Genie View
+# openalgo-chart
 
-A modular trading platform with Angel One broker integration, featuring real-time market data, historical charts, and WebSocket streaming.
+> **WARNING — Localhost Only:** This project is intended to run on a local development server (http://localhost). Some features (API access, CORS, or websocket connections) may not work correctly when served from a remote host or different origin.
+
+A professional charting application using `lightweight-charts` and React.
+
+*Inspired by [TradingView](https://www.tradingview.com/) — UI and charting concepts influenced this project.*
 
 ## Features
 
-- **Modular Broker Architecture**: Easily extensible to support multiple brokers
-- **Angel One Integration**: Full REST API integration (no SDK dependency)
-- **Real-time Data**: WebSocket streaming for live quotes
-- **Historical Data**: OHLC candle data with multiple timeframes
-- **Option Chain**: Options data with Greeks calculation
-- **OpenAlgo Compatible**: API format compatible with OpenAlgo
+### Multi-Chart Layout
+- Support for 1, 2, 3, or 4 chart grid layouts
+- Each chart maintains independent symbol, interval, and strategy configuration
+- Click on any chart to make it active for symbol changes
 
-## Tech Stack
+### Option Chain Picker
+- Professional option chain interface with real-time data
+- Strategy templates: Straddle, Strangle, Iron Condor, Butterfly, Bull Call Spread, Bear Put Spread
+- Custom multi-leg strategy builder
+- Greeks display (Delta, IV)
+- OI bars visualization
+- Per-chart strategy configuration - run different strategies in each chart panel
 
-### Backend
-- FastAPI (Python 3.12+)
-- SQLAlchemy (async) with SQLite/PostgreSQL
-- Redis for caching
-- WebSocket support
+### Chart Types
+- Candlestick
+- Line
+- Area
+- Baseline
+- Renko
 
-### Frontend
-- React with Vite
-- TradingView Lightweight Charts
-- Real-time WebSocket updates
+### Technical Indicators
+- SMA (Simple Moving Average)
+- EMA (Exponential Moving Average)
+- RSI (Relative Strength Index)
+- MACD
+- Bollinger Bands
+- Volume
+- ATR (Average True Range)
+- Stochastic
+- VWAP
+- Supertrend (ATR-based trend indicator)
 
-## Project Structure
+### Drawing Tools
+- Trend lines
+- Horizontal lines
+- Vertical lines
+- Ray lines
+- Fibonacci retracement
+- Shapes (Rectangle, Circle, Triangle, Arc)
+- Text annotations
+- Price alerts
+- Brush and Highlighter
+- Parallel Channel
 
-```
-├── backend/
-│   ├── app/
-│   │   ├── api/           # REST API endpoints
-│   │   ├── brokers/       # Broker adapters (Angel One, etc.)
-│   │   ├── db/            # Database configuration
-│   │   ├── models/        # SQLAlchemy models & Pydantic schemas
-│   │   ├── services/      # Business logic
-│   │   ├── utils/         # Utilities (cache, logger, greeks)
-│   │   └── websocket/     # WebSocket handlers
-│   ├── tests/             # Test suite
-│   └── requirements.txt
-├── frontend/
-│   ├── src/
-│   │   ├── components/    # React components
-│   │   ├── services/      # API services
-│   │   └── hooks/         # Custom hooks
-│   └── package.json
-└── .kiro/specs/           # Feature specifications
-```
+### Watchlist
+- Multiple watchlists support
+- Favorites list
+- Real-time price updates
+- Drag-and-drop reordering
+- Import/Export functionality
 
-## Getting Started
+### Additional Features
+- Symbol comparison overlay
+- Replay mode for historical analysis
+- Price alerts with notifications
+- Session break markers
+- Customizable chart appearance
+- Keyboard shortcuts
+- Command palette
+- Shift+Click Quick Measure Tool (measure distance between any two points)
+- Indicator Settings (configure periods, multipliers, colors for all indicators)
+- Quick Option Picker (fast option chain selection from toolbar)
 
-### Backend Setup
+## Quick Start
 
-```bash
-cd backend
-python -m venv venv
-venv\Scripts\activate  # Windows
-# source venv/bin/activate  # Linux/Mac
-pip install -r requirements.txt
-```
-
-Create `.env` file:
-```env
-DEBUG=true
-DATABASE_URL=sqlite+aiosqlite:///./trading.db
-REDIS_URL=redis://localhost:6379/0
-```
-
-Run the server:
-```bash
-python -m uvicorn app.main:app --reload --port 8000
-```
-
-### Frontend Setup
+Clone the repo:
 
 ```bash
-cd frontend
+git clone https://github.com/crypt0inf0/openalgo-chart.git
+```
+
+Change into the project directory:
+
+```bash
+cd openalgo-chart
+```
+
+Install dependencies:
+
+```bash
 npm install
+```
+
+Build for production:
+
+```bash
+npm run build
+```
+
+Run the dev server:
+
+```bash
 npm run dev
 ```
 
-## API Endpoints
+You can also preview a production build locally with:
 
-- `POST /api/v1/auth/login` - Broker login
-- `GET /api/v1/history` - Historical OHLC data
-- `GET /api/v1/quotes/{symbol}` - Real-time quotes
-- `GET /api/v1/optionchain/{underlying}` - Option chain
-- `GET /api/v1/search` - Symbol search
-- `WS /ws/market` - WebSocket for live data
+```bash
+npm run preview
+```
 
-## Environment Variables
+## Recent Updates
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| DEBUG | Enable debug mode | false |
-| DATABASE_URL | Database connection string | sqlite |
-| REDIS_URL | Redis connection string | localhost:6379 |
-| HOST | Server host | 0.0.0.0 |
-| PORT | Server port | 8000 |
+### Supertrend Indicator
+- New Supertrend indicator using ATR-based trend detection
+- Green line when bullish (price above support), red when bearish (price below resistance)
+- Configurable period and multiplier settings
+
+### Indicator Settings Modal
+- New dedicated modal for configuring all indicator parameters
+- Adjust periods, multipliers, and colors for each indicator
+- Sidebar navigation by category (Moving Averages, Oscillators, Momentum, Volatility, Trend, Volume)
+- Real-time preview of settings changes on chart
+
+### Quick Option Picker
+- Fast option chain access from toolbar (chain link icon)
+- Shows Call/Put LTP, OI, OI bars, and strike prices
+- Click any option to instantly chart it
+- Displays spot price, PCR ratio, and ATM premium
+
+### Arc Drawing Tool
+- New Arc tool for highlighting chart patterns (cup and handle, rounded bottoms, etc.)
+- 3-point input: click start, apex/control point, then end
+- Quadratic bezier curve with customizable border and fill
+- Full editing support: select, move anchor points, delete
+
+### Shift+Click Quick Measure
+- Hold Shift and click two points on the chart to quickly measure distance
+- Shows price change (absolute and percentage), bar count, and time duration
+- Visual line connecting the two measurement points
+
+### Option Chain & Strategy Charts
+- Added professional Option Chain Picker with Greeks (Delta, IV)
+- Strategy templates for common option strategies
+- Custom multi-leg strategy builder with buy/sell direction toggle
+- Per-chart strategy configuration for multi-chart layouts
+- Dynamic OHLC header showing strategy name (e.g., "NIFTY +25350PE/+25150PE (16 DEC)")
+
+### Multi-Chart Improvements
+- Each chart panel now maintains its own independent strategy configuration
+- Selecting a regular stock clears strategy config for that chart only
+- Strategy names display correctly in both OHLC header and price label
+
+### UI Enhancements
+- Larger Option Chain Picker modal (950px width, 550px content height)
+- More strikes visible at once for easier strategy building
+
+## Screenshot
+
+![App screenshot](./chart.png)
 
 ## License
 

@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\api\v1\quotes.py
+# hypothesis_version: 6.150.0
+
+['BROKER_ERROR', 'change', 'change_percent', 'code', 'error', 'high', 'low', 'ltp', 'message', 'open', 'prev_close', 'status', 'success', 'volume']

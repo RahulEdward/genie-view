@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\api\v1\auth.py
+# hypothesis_version: 6.150.0
+
+['/login', '/logout', 'INTERNAL_ERROR', 'LOGOUT_FAILED', 'code', 'details', 'error', 'message', 'status', 'success']

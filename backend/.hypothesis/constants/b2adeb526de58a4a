@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\config.py
+# hypothesis_version: 6.150.0
+
+[300, 5000, 8765, '.env', '0.0.0.0', '1.0.0', 'HS256', 'INFO', 'Trading Backend', 'angelone', 'utf-8']

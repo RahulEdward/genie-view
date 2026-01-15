@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\utils\cache.py
+# hypothesis_version: 6.150.0
+
+['history', 'market', 'option', 'optionchain', 'quote', 'symbol', 'utf-8']

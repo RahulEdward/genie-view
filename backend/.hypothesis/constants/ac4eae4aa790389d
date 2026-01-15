@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\services\market_data.py
+# hypothesis_version: 6.150.0
+
+[0.0, 100, 120, 240, 1440, 10080, 19800, 43200, '%Y-%m-%d', '10m', '15m', '1M', '1d', '1h', '1m', '1w', '2h', '30m', '3m', '4h', '5m', 'FIFTEEN_MINUTE', 'FIVE_MINUTE', 'FOUR_HOUR', 'ONE_DAY', 'ONE_HOUR', 'ONE_MINUTE', 'ONE_MONTH', 'ONE_WEEK', 'TEN_MINUTE', 'THIRTY_MINUTE', 'THREE_MINUTE', 'TWO_HOUR', 'change', 'change_percent', 'close', 'high', 'low', 'ltp', 'open', 'prev_close', 'stale', 'timestamp', 'volume']

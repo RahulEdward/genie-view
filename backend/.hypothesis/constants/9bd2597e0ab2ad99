@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\main.py
+# hypothesis_version: 6.150.0
+
+['*', '/api/v1', '/health', 'Database initialized', 'WebSocket', '__main__', 'app.main:app', 'healthy', 'status', 'version']

@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\api\exceptions.py
+# hypothesis_version: 6.150.0
+
+[400, 401, 404, 422, 429, 500, 502, 'Unknown error', 'code', 'errors']

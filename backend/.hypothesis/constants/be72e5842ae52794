@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\brokers\angelone\adapter.py
+# hypothesis_version: 6.150.0
+
+[30.0, 60.0, '%Y-%m-%d %H:%M', 'Authorization', 'BROKER_ERROR', 'CE', 'FULL', 'Failed to get quote', 'GET', 'LTP', 'NSE', 'POST', 'X-PrivateKey', 'angelone', 'ask', 'atmStrike', 'bid', 'candle', 'ce', 'chain', 'client_id', 'clientcode', 'data', 'exchange', 'exchangeTokens', 'expiry', 'feedToken', 'fetched', 'fromdate', 'instrument_master', 'interval', 'jwtToken', 'login', 'logout', 'lot_size', 'ltp', 'message', 'mode', 'oi', 'options', 'password', 'pe', 'quote', 'refreshToken', 'refresh_token', 'search', 'searchscrip', 'status', 'status_code', 'strike', 'symbol', 'symbolToken', 'symboltoken', 'todate', 'token', 'totp', 'underlying', 'underlyingLTP', 'volume']

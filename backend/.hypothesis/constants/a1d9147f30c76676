@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\services\symbol.py
+# hypothesis_version: 6.150.0
+
+[100, 300, 1000, 3600, 86400, 'exchange', 'expiry', 'instrument_type', 'lot_size', 'master_refresh_time', 'name', 'option_type', 'strike', 'symbol', 'tick_size', 'token']

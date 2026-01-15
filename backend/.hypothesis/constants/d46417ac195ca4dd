@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\models\schemas.py
+# hypothesis_version: 6.150.0
+
+[0.05, 0.1, '1d', 'AUTH_FAILED', 'BROKER_ERROR', 'Broker API error', 'Broker API key', 'Broker name', 'Client ID', 'INTERNAL_ERROR', 'INVALID_EXCHANGE', 'INVALID_INTERVAL', 'INVALID_TOKEN', 'NFO', 'NOT_FOUND', 'NO_DATA', 'NSE', 'Password or PIN', 'RATE_LIMITED', 'Resource not found', 'SYMBOL_NOT_FOUND', 'Symbol not found', 'TOKEN_EXPIRED', 'TOTP code', 'VALIDATION_ERROR', 'angelone', 'error', 'options', 'success']

@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\services\option.py
+# hypothesis_version: 6.150.0
+
+[100, 2099, '%Y-%m-%d', '%d%b%y', '%d-%m-%Y', '%d/%m/%Y', 'BANKEX', 'BANKNIFTY', 'CE', 'FINNIFTY', 'MIDCPNIFTY', 'NIFTY', 'PE', 'SENSEX', 'all', 'atm_strike', 'calls', 'exchange', 'expiry', 'option_type', 'options', 'puts', 'spot_price', 'strike', 'underlying']

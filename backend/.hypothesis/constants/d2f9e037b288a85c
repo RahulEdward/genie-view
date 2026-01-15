@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\websocket\broker_feed.py
+# hypothesis_version: 6.150.0
+
+[100, '<I', '<Q', 'NSE', 'action', 'avg_price', 'close', 'correlationID', 'exchange', 'exchangeType', 'exchange_type', 'high', 'last_qty', 'low', 'ltp', 'mode', 'open', 'params', 'symbol', 'symbol_key', 'timestamp', 'token', 'tokenList', 'tokens', 'total_buy_qty', 'total_sell_qty', 'volume']

@@ -1,54 +1,25 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-venv/
-ENV/
-.env
-*.egg-info/
-dist/
-build/
-
-# Database
-*.db
-*.sqlite3
-
 # Logs
+logs
 *.log
-logs/
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# Node
-node_modules/
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Build outputs
-dist/
-build/
+node_modules
+dist
+dist-ssr
+*.local
+package-lock.json
 
-# Cache
-.cache/
-.pytest_cache/
-.hypothesis/
-*.pyc
-
-# OS
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
 .DS_Store
-Thumbs.db
-
-# Secrets
-*.pem
-*.key
-secrets/
-
-# Test coverage
-htmlcov/
-.coverage
-coverage.xml
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

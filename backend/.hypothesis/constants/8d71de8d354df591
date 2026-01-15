@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\api\v1\search.py
+# hypothesis_version: 6.150.0
+
+[0.05, 'SEARCH_ERROR', 'code', 'error', 'exchange', 'instrument_type', 'lot_size', 'message', 'name', 'status', 'success', 'symbol', 'tick_size', 'token']

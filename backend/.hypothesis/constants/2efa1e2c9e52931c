@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\api\v1\greeks.py
+# hypothesis_version: 6.150.0
+
+[0.07, '%d%b%y', '/batch', 'BSE', 'CALCULATION_ERROR', 'INVALID_SYMBOL', 'NFO', 'NSE', 'code', 'days_to_expiry', 'delta', 'error', 'exchange', 'expiry', 'gamma', 'iv', 'message', 'option_type', 'status', 'strike', 'success', 'symbol', 'theta', 'underlying', 'vega']

@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\services\market_timing.py
+# hypothesis_version: 6.150.0
+
+[2025, 2026, '%A', '%H:%M', '%Y-%m-%d', 'Asia/Kolkata', 'BFO', 'BSE', 'CDS', 'CLOSED', 'Friday', 'HOLIDAY', 'MCX', 'Market is open', 'Monday', 'NFO', 'NSE', 'OPEN', 'PRE_MARKET', 'PRE_OPEN', 'Thursday', 'Tuesday', 'UNKNOWN_EXCHANGE', 'WEEKEND', 'Wednesday', 'closes_at', 'date', 'day', 'days', 'error', 'exchange', 'is_open', 'market_close', 'market_open', 'message', 'next_open', 'opens_at', 'post_close_end', 'pre_open_end', 'pre_open_start', 'status', 'supported_exchanges', 'timezone', 'trading_days']

@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\api\websocket.py
+# hypothesis_version: 6.150.0
+
+[120, 4001, '/ws', 'API key from login', 'Invalid API key', 'Invalid JSON message', 'action', 'error', 'message', 'ping', 'subscribe', 'subscribed', 'symbols', 'type', 'unsubscribe', 'unsubscribed']

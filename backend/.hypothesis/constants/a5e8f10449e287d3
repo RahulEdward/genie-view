@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\utils\greeks.py
+# hypothesis_version: 6.150.0
+
+[-1.453152027, -1.0, -0.5, -0.284496736, 0.0, 0.0001, 0.01, 0.07, 0.2, 0.254829592, 0.3, 0.3275911, 0.5, 1.0, 1.061405429, 1.421413741, 5.0, 100, 252, 365, 'CE', 'expiry_days', 'option_price', 'option_type', 'strike']

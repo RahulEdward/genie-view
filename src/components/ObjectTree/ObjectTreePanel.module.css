@@ -1,0 +1,149 @@
+.container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background-color: var(--tv-color-platform-background);
+    color: var(--tv-color-text-primary);
+    font-size: 12px;
+    overflow: hidden;
+}
+
+.header {
+    padding: 10px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--tv-color-border);
+}
+
+.headerTitle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.symbolBadge {
+    background: var(--tv-color-brand);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 11px;
+}
+
+.intervalBadge {
+    background: var(--tv-color-toolbar-button-background-hover);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--tv-color-text-secondary);
+}
+
+.section {
+    border-bottom: 1px solid var(--tv-color-border);
+}
+
+.sectionHeader {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 12px;
+    cursor: pointer;
+    user-select: none;
+    font-weight: 500;
+    font-size: 13px;
+    color: var(--tv-color-text-secondary);
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sectionHeader:hover {
+    background: var(--tv-color-toolbar-button-background-hover);
+    color: var(--tv-color-text-primary);
+}
+
+.itemList {
+    padding: 4px 0;
+}
+
+.item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px 8px 28px;
+    transition: background 0.15s ease;
+    cursor: pointer;
+    min-height: 32px;
+}
+
+.item:hover {
+    background: var(--tv-color-toolbar-button-background-hover);
+}
+
+.itemHidden {
+    opacity: 0.5;
+}
+
+.itemInfo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+}
+
+.itemIcon {
+    color: var(--tv-color-text-secondary);
+    flex-shrink: 0;
+}
+
+.itemName {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 13px;
+    color: var(--tv-color-text-primary);
+}
+
+.itemActions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.actionBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: none;
+    background: transparent;
+    color: var(--tv-color-text-secondary);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+}
+
+.actionBtn:hover {
+    background: var(--tv-color-toolbar-button-background-hover);
+    color: var(--tv-color-text-primary);
+}
+
+.actionBtnActive {
+    color: var(--tv-color-brand);
+}
+
+.deleteBtn:hover {
+    background: rgba(255, 82, 82, 0.15);
+    color: #ff5252;
+    color: var(--tv-color-down, #ff5252);
+}
+
+.emptyMessage {
+    padding: 16px 28px;
+    color: var(--tv-color-text-secondary);
+    font-style: italic;
+    font-size: 13px;
+    text-align: center;
+}

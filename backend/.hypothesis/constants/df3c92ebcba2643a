@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\models\database.py
+# hypothesis_version: 6.150.0
+
+[0.05, 100, 200, 'api_key', 'cached_option_chain', 'client_id', 'date', 'exchange', 'expiry', 'idx_holiday_year', 'idx_instrument_token', 'idx_ohlc_timestamp', 'idx_session_api_key', 'instrument_master', 'interval', 'market_holidays', 'name', 'ohlc_history', 'symbol', 'timestamp', 'token', 'underlying', 'uq_holiday_date', 'uq_instrument', 'uq_ohlc_candle', 'user_sessions', 'year']

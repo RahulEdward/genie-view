@@ -1,0 +1,4 @@
+# file: D:\chart-main\backend\app\brokers\angelone\transformers.py
+# hypothesis_version: 6.150.0
+
+[0.05, '%Y-%m-%d', '%d%b%y', '%d-%b-%Y', '+00:00', '-', 'BROKER_ERROR', 'CE', 'OPTIDX', 'OPTSTK', 'PE', 'Unknown error', 'Z', 'ask', 'askprice', 'bid', 'bidprice', 'buy', 'close', 'companyname', 'depth', 'errorCode', 'errorMessage', 'errorcode', 'exch_seg', 'exchange', 'expiry', 'fetched', 'high', 'instrument_type', 'instrumenttype', 'lot_size', 'lotsize', 'low', 'ltp', 'message', 'name', 'oi', 'open', 'opninterest', 'optiontype', 'prevClose', 'prev_close', 'price', 'quantity', 'sell', 'strike', 'symbol', 'symboltoken', 'tick_size', 'ticksize', 'token', 'tradeVolume', 'tradingsymbol', 'volume']
