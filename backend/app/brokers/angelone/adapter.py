@@ -81,11 +81,15 @@ class AngelOneAdapter(BrokerAdapter):
                 return response.json()
                 
             except httpx.HTTPStatusError as e:
-                logger.error(f"HTTP error: {e.response.status_code} - {e.response.text}")
-                error_data = e.response.json() if e.response.text else {}
+                error_text = e.response.text
+                logger.error(f"HTTP error: {e.response.status_code} - {error_text}")
+                try:
+                    error_data = e.response.json() if error_text else {}
+                except:
+                    error_data = {"message": error_text}
                 raise BrokerError(
                     message=error_data.get("message", str(e)),
-                    details={"status_code": e.response.status_code}
+                    details={"status_code": e.response.status_code, "response": error_text}
                 )
             except httpx.RequestError as e:
                 logger.error(f"Request error: {e}")
@@ -228,15 +232,31 @@ class AngelOneAdapter(BrokerAdapter):
             if not symbol_token:
                 raise SymbolNotFoundError(symbol)
         
+        # Ensure to_date is not in the future
+        now = datetime.now()
+        if to_date > now:
+            to_date = now
+        
+        # Angel One API expects specific time format
+        # For daily candles, use 09:15 as start time and 15:30 as end time
+        converted_interval = self.convert_interval(interval)
+        
+        if converted_interval in ["ONE_DAY", "ONE_WEEK", "ONE_MONTH"]:
+            from_str = from_date.strftime("%Y-%m-%d 09:15")
+            to_str = to_date.strftime("%Y-%m-%d 15:30")
+        else:
+            from_str = from_date.strftime("%Y-%m-%d %H:%M")
+            to_str = to_date.strftime("%Y-%m-%d %H:%M")
+        
         payload = {
             "exchange": EXCHANGE_MAP.get(exchange, exchange),
             "symboltoken": symbol_token,
-            "interval": self.convert_interval(interval),
-            "fromdate": from_date.strftime("%Y-%m-%d %H:%M"),
-            "todate": to_date.strftime("%Y-%m-%d %H:%M")
+            "interval": converted_interval,
+            "fromdate": from_str,
+            "todate": to_str
         }
         
-        logger.debug(f"Fetching history: {payload}")
+        logger.info(f"Fetching history for {symbol}: {payload}")
         
         response = await self._make_request(
             "POST",
@@ -247,6 +267,7 @@ class AngelOneAdapter(BrokerAdapter):
         if response.get("status") and response.get("data"):
             return transform_candle_data(response["data"])
         
+        logger.warning(f"No data returned for {symbol}: {response}")
         return []
     
     async def get_quote(self, symbol: str, exchange: str) -> Quote:
@@ -392,15 +413,19 @@ class AngelOneAdapter(BrokerAdapter):
     ) -> List[str]:
         """Get available expiry dates"""
         # Search for symbols and extract unique expiries
-        options = await self.search_symbols(underlying, exchange)
-        
-        expiries = set()
-        for opt in options:
-            if opt.expiry:
-                expiries.add(opt.expiry)
-        
-        # Sort by date
-        return sorted(list(expiries))
+        try:
+            options = await self.search_symbols(underlying, exchange)
+            
+            expiries = set()
+            for opt in options:
+                if opt.expiry:
+                    expiries.add(opt.expiry)
+            
+            # Sort by date
+            return sorted(list(expiries))
+        except Exception as e:
+            logger.warning(f"Error getting expiry dates: {e}")
+            return []
     
     async def search_symbols(
         self,
@@ -408,24 +433,36 @@ class AngelOneAdapter(BrokerAdapter):
         exchange: Optional[str] = None
     ) -> List[SymbolInfo]:
         """Search for symbols"""
+        # Angel One requires exchange to be specified
+        # If not provided, default to NSE for equity, NFO for derivatives
+        if not exchange:
+            exchange = "NSE"
+        
+        mapped_exchange = EXCHANGE_MAP.get(exchange, exchange)
+        
         payload = {
-            "exchange": EXCHANGE_MAP.get(exchange, exchange) if exchange else "",
+            "exchange": mapped_exchange,
             "searchscrip": query
         }
         
-        response = await self._make_request(
-            "POST",
-            ENDPOINTS["search"],
-            data=payload
-        )
-        
-        if response.get("status") and response.get("data"):
-            return [
-                transform_symbol_info(item)
-                for item in response["data"]
-            ]
-        
-        return []
+        try:
+            response = await self._make_request(
+                "POST",
+                ENDPOINTS["search"],
+                data=payload
+            )
+            
+            if response.get("status") and response.get("data"):
+                return [
+                    transform_symbol_info(item)
+                    for item in response["data"]
+                ]
+            
+            return []
+        except BrokerError as e:
+            # Log but don't raise - return empty list
+            logger.warning(f"Search API error for '{query}' on {exchange}: {e}")
+            return []
     
     async def get_symbol_token(
         self,

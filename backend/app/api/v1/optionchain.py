@@ -115,7 +115,7 @@ async def get_option_chain(
             underlyingLTP=chain.get("spot_price", 0),
             underlyingPrevClose=0,  # Not always available
             atmStrike=chain.get("atm_strike", 0),
-            expiryDate=chain.get("expiry", request.expiry or ""),
+            expiryDate=chain.get("expiry") or request.expiry or "",
             chain=option_chain
         )
         
@@ -128,13 +128,18 @@ async def get_option_chain(
         
     except Exception as e:
         logger.error(f"Option chain error for {request.underlying}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "status": "error",
-                "code": "BROKER_ERROR",
-                "message": str(e)
-            }
+        # Return empty chain instead of 500 error
+        empty_data = OptionChainData(
+            underlying=request.underlying,
+            underlyingLTP=0,
+            underlyingPrevClose=0,
+            atmStrike=0,
+            expiryDate=request.expiry or "",
+            chain=[]
+        )
+        return OptionChainResponse(
+            status="success",
+            data=empty_data
         )
 
 

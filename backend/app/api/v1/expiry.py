@@ -26,7 +26,7 @@ async def get_expiry_dates(
     Get available expiry dates for an underlying.
     
     - **apikey**: API key from login
-    - **underlying**: Underlying symbol (NIFTY, BANKNIFTY, etc.)
+    - **underlying** or **symbol**: Underlying symbol (NIFTY, BANKNIFTY, etc.)
     - **exchange**: Exchange code (NFO, BFO)
     - **instrumenttype**: "options" or "futures"
     
@@ -42,14 +42,26 @@ async def get_expiry_dates(
     # Create option service
     option_service = OptionService(broker)
     
+    # Get underlying from either field
+    underlying = request.get_underlying
+    if not underlying:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "status": "error",
+                "code": "VALIDATION_ERROR",
+                "message": "Either 'underlying' or 'symbol' is required"
+            }
+        )
+    
     try:
         expiries = await option_service.get_expiry_dates(
-            underlying=request.underlying,
+            underlying=underlying,
             exchange=request.exchange,
             instrument_type=request.instrumenttype
         )
         
-        logger.debug(f"Expiry dates: {request.underlying} count={len(expiries)}")
+        logger.debug(f"Expiry dates: {underlying} count={len(expiries)}")
         
         return ExpiryResponse(
             status="success",
@@ -57,12 +69,9 @@ async def get_expiry_dates(
         )
         
     except Exception as e:
-        logger.error(f"Expiry error for {request.underlying}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "status": "error",
-                "code": "BROKER_ERROR",
-                "message": str(e)
-            }
+        logger.error(f"Expiry error for {underlying}: {e}")
+        # Return empty list instead of 500 error
+        return ExpiryResponse(
+            status="success",
+            data=[]
         )

@@ -5,7 +5,7 @@ Main router that includes all endpoint routers
 
 from fastapi import APIRouter
 
-from app.api.v1 import auth, history, quotes, optionchain, greeks, expiry, search, market, openalgo
+from app.api.v1 import auth, history, quotes, optionchain, greeks, expiry, search, market, angelalgo
 
 api_router = APIRouter()
 
@@ -19,5 +19,5 @@ api_router.include_router(expiry.router, prefix="/expiry", tags=["Expiry"])
 api_router.include_router(search.router, prefix="/search", tags=["Search"])
 api_router.include_router(market.router, prefix="/market", tags=["Market"])
 
-# OpenAlgo compatible endpoints (for frontend compatibility)
-api_router.include_router(openalgo.router, tags=["OpenAlgo Compat"])
+# AngelAlgo compatible endpoints (for frontend compatibility)
+api_router.include_router(angelalgo.router, tags=["AngelAlgo Compat"])

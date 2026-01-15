@@ -71,11 +71,8 @@ async def search_symbols(
         
     except Exception as e:
         logger.error(f"Search error for '{request.query}': {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "status": "error",
-                "code": "SEARCH_ERROR",
-                "message": str(e)
-            }
+        # Return empty results instead of 500 error
+        return SearchResponse(
+            status="success",
+            data=[]
         )

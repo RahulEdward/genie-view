@@ -264,14 +264,85 @@ class OptionService:
             instrument_type: "options" or "futures"
         
         Returns:
-            List of expiry dates in DDMMMYY format, sorted ascending
+            List of expiry dates in DD-MMM-YY format, sorted ascending
         """
+        # First try broker's direct expiry API
         expiries = await self.broker.get_expiry_dates(
             underlying, exchange, instrument_type
         )
         
+        # If no expiries from broker, try to extract from symbol search
+        if not expiries:
+            expiries = await self._extract_expiries_from_search(
+                underlying, exchange, instrument_type
+            )
+        
         # Sort by date
         return self.sort_expiries(expiries)
+    
+    async def _extract_expiries_from_search(
+        self,
+        underlying: str,
+        exchange: str,
+        instrument_type: str
+    ) -> List[str]:
+        """
+        Extract expiry dates from symbol search results.
+        
+        Angel One doesn't have a direct expiry API, so we search for
+        option/future symbols and extract unique expiry dates.
+        
+        Args:
+            underlying: Underlying symbol
+            exchange: Exchange code
+            instrument_type: "options" or "futures"
+        
+        Returns:
+            List of unique expiry dates
+        """
+        import re
+        
+        try:
+            # Search for symbols
+            results = await self.broker.search_symbols(underlying, exchange)
+            
+            if not results:
+                return []
+            
+            expiries = set()
+            
+            # Pattern to extract expiry from symbol names
+            # Examples: RELIANCE24FEB261000CE, NIFTY30JAN25CE, BANKNIFTY24JAN2550000CE
+            # Format: SYMBOL + DDMMMYY + STRIKE + CE/PE
+            expiry_pattern = re.compile(
+                r'(\d{2}[A-Z]{3}\d{2})',  # DDMMMYY format
+                re.IGNORECASE
+            )
+            
+            for result in results:
+                symbol = result.symbol if hasattr(result, 'symbol') else result.get('symbol', '')
+                
+                # Filter by instrument type
+                if instrument_type == "options":
+                    if not (symbol.endswith('CE') or symbol.endswith('PE')):
+                        continue
+                elif instrument_type == "futures":
+                    if symbol.endswith('CE') or symbol.endswith('PE'):
+                        continue
+                
+                # Extract expiry date
+                match = expiry_pattern.search(symbol)
+                if match:
+                    expiry = match.group(1).upper()
+                    # Convert to DD-MMM-YY format
+                    formatted = f"{expiry[:2]}-{expiry[2:5]}-{expiry[5:]}"
+                    expiries.add(formatted)
+            
+            return list(expiries)
+            
+        except Exception as e:
+            logger.warning(f"Error extracting expiries from search: {e}")
+            return []
     
     def identify_atm_strike(
         self,
@@ -353,24 +424,30 @@ class OptionService:
         Sort expiry dates chronologically.
         
         Args:
-            expiries: List of expiry strings in DDMMMYY format
+            expiries: List of expiry strings in DD-MMM-YY or DDMMMYY format
         
         Returns:
             Sorted list of expiries
         """
         def parse_expiry(exp: str) -> datetime:
-            """Parse DDMMMYY to datetime"""
+            """Parse expiry to datetime"""
+            # Remove any dashes for consistent parsing
+            exp_clean = exp.upper().replace("-", "")
+            
             try:
-                return datetime.strptime(exp.upper(), "%d%b%y")
+                return datetime.strptime(exp_clean, "%d%b%y")
             except ValueError:
-                # Try other formats
-                for fmt in ["%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"]:
-                    try:
-                        return datetime.strptime(exp, fmt)
-                    except ValueError:
-                        continue
-                # Return far future date for unparseable
-                return datetime(2099, 12, 31)
+                pass
+            
+            # Try other formats
+            for fmt in ["%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d%b%Y"]:
+                try:
+                    return datetime.strptime(exp, fmt)
+                except ValueError:
+                    continue
+            
+            # Return far future date for unparseable
+            return datetime(2099, 12, 31)
         
         return sorted(expiries, key=parse_expiry)
     

@@ -220,9 +220,15 @@ class GreeksResponse(BaseResponse):
 class ExpiryRequest(BaseModel):
     """Expiry dates request"""
     apikey: str
-    underlying: str
+    underlying: Optional[str] = None  # Backend field name
+    symbol: Optional[str] = None  # Frontend field name (alias)
     exchange: str = "NFO"
     instrumenttype: str = "options"
+    
+    @property
+    def get_underlying(self) -> str:
+        """Get underlying symbol from either field"""
+        return self.underlying or self.symbol or ""
 
 
 class ExpiryResponse(BaseResponse):

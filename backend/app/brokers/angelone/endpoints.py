@@ -41,6 +41,10 @@ INTERVAL_MAP = {
     "1d": "ONE_DAY",
     "1w": "ONE_WEEK",
     "1M": "ONE_MONTH",
+    # OpenAlgo format (frontend sends these)
+    "D": "ONE_DAY",
+    "W": "ONE_WEEK",
+    "M": "ONE_MONTH",
     # Also support direct Angel One format
     "ONE_MINUTE": "ONE_MINUTE",
     "THREE_MINUTE": "THREE_MINUTE",

@@ -1,11 +1,11 @@
 """
-OpenAlgo Compatible Endpoints
+AngelAlgo Compatible Endpoints
 Endpoints to match OpenAlgo API format for frontend compatibility
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from app.db.session import get_db
 from app.services.auth import AuthService
@@ -16,14 +16,13 @@ router = APIRouter()
 
 
 @router.get("/chart")
-@router.post("/chart")
-async def get_chart_preferences(
+async def get_chart_preferences_get(
     apikey: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Get user chart preferences (OpenAlgo compatibility).
-    Used by frontend to validate API key and fetch preferences.
+    Get user chart preferences (OpenAlgo compatibility) - GET method.
+    Accepts apikey from query param.
     """
     if not apikey:
         raise HTTPException(
@@ -42,6 +41,43 @@ async def get_chart_preferences(
         )
     
     # Return empty preferences (frontend will use localStorage)
+    return {"status": "success", "data": {}}
+
+
+@router.post("/chart")
+async def get_chart_preferences_post(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Save/Get user chart preferences (OpenAlgo compatibility) - POST method.
+    Accepts apikey from JSON body.
+    """
+    # Parse JSON body
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    
+    api_key = body.get("apikey")
+    
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "API key required"}
+        )
+    
+    # Validate API key
+    auth_service = AuthService(db)
+    session = await auth_service.get_session(api_key)
+    
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "Invalid API key"}
+        )
+    
+    # Return success (preferences saved - frontend uses localStorage anyway)
     return {"status": "success", "data": {}}
 
 
