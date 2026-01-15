@@ -6,7 +6,7 @@
  * Triggers callbacks when price crosses alert thresholds.
  */
 
-import { subscribeToMultiTicker } from './openalgo';
+import { subscribeToMultiTicker } from './angelalgo';
 import logger from '../utils/logger';
 
 // Must match ChartComponent.jsx storage key

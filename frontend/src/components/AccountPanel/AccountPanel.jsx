@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ChevronDown, ChevronUp, RefreshCw, X, Wallet, Minus, Maximize2, Minimize2 } from 'lucide-react';
 import styles from './AccountPanel.module.css';
-import { getFunds, getPositionBook, getOrderBook, getHoldings, getTradeBook, ping } from '../../services/openalgo';
+import { getFunds, getPositionBook, getOrderBook, getHoldings, getTradeBook, ping } from '../../services/angelalgo';
 
 // Tab definitions
 const TABS = [
@@ -534,7 +534,7 @@ const AccountPanel = ({
                     <div className={`${styles.content} ${!isToolbarVisible ? styles.noToolbar : ''}`}>
                         {!isAuthenticated ? (
                             <div className={styles.emptyState}>
-                                <p>Connect to OpenAlgo to view account data</p>
+                                <p>Connect to AngelAlgo to view account data</p>
                             </div>
                         ) : isLoading && positions.length === 0 ? (
                             <div className={styles.loading}>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Briefcase, X } from 'lucide-react';
 import styles from './TradingPanel.module.css';
-import { subscribeToTicker, placeOrder } from '../../services/openalgo';
+import { subscribeToTicker, placeOrder } from '../../services/angelalgo';
 import Toast from '../Toast/Toast';
 
 const TradingPanel = ({ symbol, exchange = 'NSE', isOpen, onClose, showToast }) => {

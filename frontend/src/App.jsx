@@ -9,7 +9,7 @@ import SymbolSearch from './components/SymbolSearch/SymbolSearch';
 import Toast from './components/Toast/Toast';
 import SnapshotToast from './components/Toast/SnapshotToast';
 import html2canvas from 'html2canvas';
-import { getTickerPrice, subscribeToMultiTicker, checkAuth, closeAllWebSockets, forceCloseAllWebSockets, saveUserPreferences, modifyOrder, cancelOrder } from './services/openalgo';
+import { getTickerPrice, subscribeToMultiTicker, checkAuth, closeAllWebSockets, forceCloseAllWebSockets, saveUserPreferences, modifyOrder, cancelOrder } from './services/angelalgo';
 import { globalAlertMonitor } from './services/globalAlertMonitor';
 
 import BottomBar from './components/BottomBar/BottomBar';
@@ -1921,34 +1921,34 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
   const [isReplayMode, setIsReplayMode] = useState(false);
   const [isDrawingsLocked, setIsDrawingsLocked] = useState(false);
   const [isDrawingsHidden, setIsDrawingsHidden] = useState(false);
-  const [isTimerVisible, setIsTimerVisible] = useLocalStorage('oa_timer_visible', false);
-  const [isSessionBreakVisible, setIsSessionBreakVisible] = useLocalStorage('oa_session_break_visible', false);
+  const [isTimerVisible, setIsTimerVisible] = useLocalStorage('aa_timer_visible', false);
+  const [isSessionBreakVisible, setIsSessionBreakVisible] = useLocalStorage('aa_session_break_visible', false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isIndicatorSettingsOpen, setIsIndicatorSettingsOpen] = useState(false);
   const [websocketUrl, setWebsocketUrl] = useState(() => {
     try {
-      return localStorage.getItem('oa_ws_url') || '127.0.0.1:8765';
+      return localStorage.getItem('aa_ws_url') || '127.0.0.1:8765';
     } catch {
       return '127.0.0.1:8765';
     }
   });
   const [apiKey, setApiKey] = useState(() => {
     try {
-      return localStorage.getItem('oa_apikey') || '';
+      return localStorage.getItem('aa_apikey') || '';
     } catch {
       return '';
     }
   });
   const [hostUrl, setHostUrl] = useState(() => {
     try {
-      return localStorage.getItem('oa_host_url') || 'http://127.0.0.1:8000';
+      return localStorage.getItem('aa_host_url') || 'http://127.0.0.1:8000';
     } catch {
       return 'http://127.0.0.1:8000';
     }
   });
-  const [openalgoUsername, setOpenalgoUsername] = useState(() => {
+  const [angelalgoUsername, setAngelalgoUsername] = useState(() => {
     try {
-      return localStorage.getItem('oa_username') || '';
+      return localStorage.getItem('aa_username') || '';
     } catch {
       return '';
     }
@@ -2640,22 +2640,22 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
 
   const handleApiKeySaveFromSettings = (newApiKey) => {
     setApiKey(newApiKey);
-    localStorage.setItem('oa_apikey', newApiKey);
+    localStorage.setItem('aa_apikey', newApiKey);
   };
 
   const handleWebsocketUrlSave = (newUrl) => {
     setWebsocketUrl(newUrl);
-    localStorage.setItem('oa_ws_url', newUrl);
+    localStorage.setItem('aa_ws_url', newUrl);
   };
 
   const handleHostUrlSave = (newUrl) => {
     setHostUrl(newUrl);
-    localStorage.setItem('oa_host_url', newUrl);
+    localStorage.setItem('aa_host_url', newUrl);
   };
 
   const handleUsernameSave = (newUsername) => {
-    setOpenalgoUsername(newUsername);
-    localStorage.setItem('oa_username', newUsername);
+    setAngelalgoUsername(newUsername);
+    localStorage.setItem('aa_username', newUsername);
   };
 
   // Command Palette (Cmd+K / Ctrl+K)
@@ -2778,7 +2778,7 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
         backgroundColor: 'var(--tv-color-platform-background)',
         color: 'var(--tv-color-text-primary)'
       }}>
-        <div style={{ fontSize: '18px', marginBottom: '10px' }}>Connecting to OpenAlgo...</div>
+        <div style={{ fontSize: '18px', marginBottom: '10px' }}>Connecting to AngelAlgo...</div>
         <div style={{ fontSize: '14px', color: 'var(--tv-color-text-secondary)' }}>Checking authentication</div>
       </div>
     );
@@ -2787,7 +2787,7 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
   // If not authenticated, show Broker Login dialog
   if (isAuthenticated === false) {
     const handleLoginSuccess = (newApiKey) => {
-      localStorage.setItem('oa_apikey', newApiKey);
+      localStorage.setItem('aa_apikey', newApiKey);
       // Also update the apiKey state so Settings dialog reflects the entered key
       setApiKey(newApiKey);
       setIsAuthenticated(true);
@@ -3179,7 +3179,7 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
         onApiKeySave={handleApiKeySaveFromSettings}
         websocketUrl={websocketUrl}
         onWebsocketUrlSave={handleWebsocketUrlSave}
-        openalgoUsername={openalgoUsername}
+        angelalgoUsername={angelalgoUsername}
         onUsernameSave={handleUsernameSave}
         chartAppearance={chartAppearance}
         onChartAppearanceChange={handleChartAppearanceChange}

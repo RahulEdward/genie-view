@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import { checkAuth } from '../services/openalgo';
+import { checkAuth } from '../services/angelalgo';
 
 const UserContext = createContext();
 

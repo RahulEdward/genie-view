@@ -341,13 +341,13 @@ export class AlertEditDialog {
                 accent-color: #2962FF;
             }
 
-            .alert-edit-openalgo-fields {
+            .alert-edit-angelalgo-fields {
                 display: none;
                 flex-direction: column;
                 gap: 12px;
             }
 
-            .alert-edit-openalgo-fields.visible {
+            .alert-edit-angelalgo-fields.visible {
                 display: flex;
             }
 
@@ -710,17 +710,17 @@ export class AlertEditDialog {
         const radioGroup = document.createElement('div');
         radioGroup.className = 'alert-edit-radio-group';
 
-        const openalgoRadio = this._createRadio('webhook-mode', 'openalgo', 'OpenAlgo Trading', this._notifications.webhookMode === 'openalgo');
+        const angelalgoRadio = this._createRadio('webhook-mode', 'angelalgo', 'AngelAlgo Trading', this._notifications.webhookMode === 'angelalgo');
         const customRadio = this._createRadio('webhook-mode', 'custom', 'Custom URL', this._notifications.webhookMode === 'custom');
 
-        radioGroup.appendChild(openalgoRadio);
+        radioGroup.appendChild(angelalgoRadio);
         radioGroup.appendChild(customRadio);
         modeGroup.appendChild(radioGroup);
         webhookSection.appendChild(modeGroup);
 
-        // OpenAlgo fields
-        const openalgoFields = document.createElement('div');
-        openalgoFields.className = `alert-edit-openalgo-fields ${this._notifications.webhookMode === 'openalgo' ? 'visible' : ''}`;
+        // AngelAlgo fields
+        const angelalgoFields = document.createElement('div');
+        angelalgoFields.className = `alert-edit-angelalgo-fields ${this._notifications.webhookMode === 'angelalgo' ? 'visible' : ''}`;
 
         // Action row
         const actionRow = document.createElement('div');
@@ -730,9 +730,9 @@ export class AlertEditDialog {
         actionGroup.className = 'alert-edit-form-group';
         actionGroup.innerHTML = `
             <label class="alert-edit-label">Action</label>
-            <select class="alert-edit-select" id="openalgo-action">
-                <option value="BUY" ${this._notifications.openalgoAction === 'BUY' ? 'selected' : ''}>BUY</option>
-                <option value="SELL" ${this._notifications.openalgoAction === 'SELL' ? 'selected' : ''}>SELL</option>
+            <select class="alert-edit-select" id="angelalgo-action">
+                <option value="BUY" ${this._notifications.angelalgoAction === 'BUY' ? 'selected' : ''}>BUY</option>
+                <option value="SELL" ${this._notifications.angelalgoAction === 'SELL' ? 'selected' : ''}>SELL</option>
             </select>
         `;
         actionRow.appendChild(actionGroup);
@@ -741,14 +741,14 @@ export class AlertEditDialog {
         productGroup.className = 'alert-edit-form-group';
         productGroup.innerHTML = `
             <label class="alert-edit-label">Product</label>
-            <select class="alert-edit-select" id="openalgo-product">
-                <option value="MIS" ${this._notifications.openalgoProduct === 'MIS' ? 'selected' : ''}>MIS (Intraday)</option>
-                <option value="CNC" ${this._notifications.openalgoProduct === 'CNC' ? 'selected' : ''}>CNC (Delivery)</option>
-                <option value="NRML" ${this._notifications.openalgoProduct === 'NRML' ? 'selected' : ''}>NRML (F&O)</option>
+            <select class="alert-edit-select" id="angelalgo-product">
+                <option value="MIS" ${this._notifications.angelalgoProduct === 'MIS' ? 'selected' : ''}>MIS (Intraday)</option>
+                <option value="CNC" ${this._notifications.angelalgoProduct === 'CNC' ? 'selected' : ''}>CNC (Delivery)</option>
+                <option value="NRML" ${this._notifications.angelalgoProduct === 'NRML' ? 'selected' : ''}>NRML (F&O)</option>
             </select>
         `;
         actionRow.appendChild(productGroup);
-        openalgoFields.appendChild(actionRow);
+        angelalgoFields.appendChild(actionRow);
 
         // Quantity row
         const qtyRow = document.createElement('div');
@@ -758,7 +758,7 @@ export class AlertEditDialog {
         qtyGroup.className = 'alert-edit-form-group';
         qtyGroup.innerHTML = `
             <label class="alert-edit-label">Quantity</label>
-            <input type="number" class="alert-edit-input" id="openalgo-quantity" min="1" value="${this._notifications.openalgoQuantity || 1}">
+            <input type="number" class="alert-edit-input" id="angelalgo-quantity" min="1" value="${this._notifications.angelalgoQuantity || 1}">
         `;
         qtyRow.appendChild(qtyGroup);
 
@@ -766,15 +766,15 @@ export class AlertEditDialog {
         priceTypeGroup.className = 'alert-edit-form-group';
         priceTypeGroup.innerHTML = `
             <label class="alert-edit-label">Price Type</label>
-            <select class="alert-edit-select" id="openalgo-pricetype">
-                <option value="MARKET" ${this._notifications.openalgoPricetype === 'MARKET' ? 'selected' : ''}>MARKET</option>
-                <option value="LIMIT" ${this._notifications.openalgoPricetype === 'LIMIT' ? 'selected' : ''}>LIMIT</option>
+            <select class="alert-edit-select" id="angelalgo-pricetype">
+                <option value="MARKET" ${this._notifications.angelalogPricetype === 'MARKET' ? 'selected' : ''}>MARKET</option>
+                <option value="LIMIT" ${this._notifications.angelalogPricetype === 'LIMIT' ? 'selected' : ''}>LIMIT</option>
             </select>
         `;
         qtyRow.appendChild(priceTypeGroup);
-        openalgoFields.appendChild(qtyRow);
+        angelalgoFields.appendChild(qtyRow);
 
-        webhookSection.appendChild(openalgoFields);
+        webhookSection.appendChild(angelalgoFields);
 
         // Custom URL field
         const customUrlSection = document.createElement('div');
@@ -790,15 +790,15 @@ export class AlertEditDialog {
         webhookSection.appendChild(customUrlSection);
 
         // Mode change listeners
-        (openalgoRadio.querySelector('input') as HTMLInputElement).addEventListener('change', () => {
-            this._notifications.webhookMode = 'openalgo';
-            openalgoFields.classList.add('visible');
+        (angelalgoRadio.querySelector('input') as HTMLInputElement).addEventListener('change', () => {
+            this._notifications.webhookMode = 'angelalgo';
+            angelalgoFields.classList.add('visible');
             customUrlSection.classList.remove('visible');
         });
 
         (customRadio.querySelector('input') as HTMLInputElement).addEventListener('change', () => {
             this._notifications.webhookMode = 'custom';
-            openalgoFields.classList.remove('visible');
+            angelalgoFields.classList.remove('visible');
             customUrlSection.classList.add('visible');
         });
 
@@ -807,7 +807,7 @@ export class AlertEditDialog {
         // Telegram toggle
         content.appendChild(this._createToggleRow(
             'Telegram notification',
-            'Sends alert message to your Telegram via OpenAlgo bot.',
+            'Sends alert message to your Telegram via AngelAlgo bot.',
             this._notifications.telegramEnabled || false,
             (checked) => { this._notifications.telegramEnabled = checked; }
         ));
@@ -856,17 +856,17 @@ export class AlertEditDialog {
     private _handleSave(): void {
         if (!this._onSave || !this._currentData) return;
 
-        // Collect values from OpenAlgo fields if visible
-        const actionSelect = document.getElementById('openalgo-action') as HTMLSelectElement;
-        const productSelect = document.getElementById('openalgo-product') as HTMLSelectElement;
-        const quantityInput = document.getElementById('openalgo-quantity') as HTMLInputElement;
-        const priceTypeSelect = document.getElementById('openalgo-pricetype') as HTMLSelectElement;
+        // Collect values from AngelAlgo fields if visible
+        const actionSelect = document.getElementById('angelalgo-action') as HTMLSelectElement;
+        const productSelect = document.getElementById('angelalgo-product') as HTMLSelectElement;
+        const quantityInput = document.getElementById('angelalgo-quantity') as HTMLInputElement;
+        const priceTypeSelect = document.getElementById('angelalgo-pricetype') as HTMLSelectElement;
         const webhookUrlInput = document.getElementById('webhook-url') as HTMLInputElement;
 
-        if (actionSelect) this._notifications.openalgoAction = actionSelect.value as 'BUY' | 'SELL';
-        if (productSelect) this._notifications.openalgoProduct = productSelect.value as 'MIS' | 'CNC' | 'NRML';
-        if (quantityInput) this._notifications.openalgoQuantity = parseInt(quantityInput.value) || 1;
-        if (priceTypeSelect) this._notifications.openalgoPricetype = priceTypeSelect.value as 'MARKET' | 'LIMIT';
+        if (actionSelect) this._notifications.angelalgoAction = actionSelect.value as 'BUY' | 'SELL';
+        if (productSelect) this._notifications.angelalgoProduct = productSelect.value as 'MIS' | 'CNC' | 'NRML';
+        if (quantityInput) this._notifications.angelalgoQuantity = parseInt(quantityInput.value) || 1;
+        if (priceTypeSelect) this._notifications.angelalogPricetype = priceTypeSelect.value as 'MARKET' | 'LIMIT';
         if (webhookUrlInput) this._notifications.webhookUrl = webhookUrlInput.value;
 
         this._onSave({

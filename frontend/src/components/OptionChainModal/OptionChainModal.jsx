@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { X, Loader2, RefreshCw, ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from 'lucide-react';
 import { getOptionChain, getAvailableExpiries, UNDERLYINGS } from '../../services/optionChain';
-import { subscribeToMultiTicker, getMultiOptionGreeks } from '../../services/openalgo';
+import { subscribeToMultiTicker, getMultiOptionGreeks } from '../../services/angelalgo';
 import styles from './OptionChainModal.module.css';
 import classNames from 'classnames';
 

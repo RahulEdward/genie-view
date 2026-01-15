@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { X, TrendingUp, Loader2, RefreshCw, Check, ChevronLeft, ChevronRight, ChevronDown, Settings2, Plus, Trash2 } from 'lucide-react';
 import { getOptionChain, getAvailableExpiries, UNDERLYINGS, getDaysToExpiry, parseExpiryDate, fetchOptionGreeks, fetchMultiOptionGreeks, clearOptionChainCache } from '../../services/optionChain';
-import { subscribeToMultiTicker } from '../../services/openalgo';
+import { subscribeToMultiTicker } from '../../services/angelalgo';
 import { STRATEGY_TEMPLATES, applyTemplate, validateStrategy, calculateNetPremium, formatStrategyName, generateLegId } from '../../services/strategyTemplates';
 import styles from './OptionChainPicker.module.css';
 import classNames from 'classnames';

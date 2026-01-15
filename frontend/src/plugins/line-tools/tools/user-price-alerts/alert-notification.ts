@@ -220,15 +220,15 @@ export class AlertNotification {
                 },
                 {
                     enabled: settings.webhookEnabled,
-                    mode: settings.webhookMode || 'openalgo',
+                    mode: settings.webhookMode || 'angelalgo',
                     url: settings.webhookUrl,
                     message: settings.message,
-                    // Always provide openalgoSettings when mode is openalgo (or default)
-                    openalgoSettings: (settings.webhookMode || 'openalgo') === 'openalgo' ? {
-                        action: settings.openalgoAction || 'BUY',
-                        product: settings.openalgoProduct || 'MIS',
-                        quantity: settings.openalgoQuantity || 1,
-                        pricetype: settings.openalgoPricetype || 'MARKET',
+                    // Always provide angelalgoSettings when mode is angelalgo (or default)
+                    angelalgoSettings: (settings.webhookMode || 'angelalgo') === 'angelalgo' ? {
+                        action: settings.angelalgoAction || 'BUY',
+                        product: settings.angelalgoProduct || 'MIS',
+                        quantity: settings.angelalgoQuantity || 1,
+                        pricetype: settings.angelalogPricetype || 'MARKET',
                     } : undefined,
                 }
             );

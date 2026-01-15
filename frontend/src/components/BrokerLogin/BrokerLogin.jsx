@@ -90,9 +90,9 @@ const BrokerLogin = ({ onLoginSuccess, onClose }) => {
 
             if (response.ok && data.status === 'success') {
                 // Save API key to localStorage for frontend use
-                localStorage.setItem('oa_apikey', data.data.apikey);
-                localStorage.setItem('oa_broker', data.data.broker);
-                localStorage.setItem('oa_client_id', data.data.client_id);
+                localStorage.setItem('aa_apikey', data.data.apikey);
+                localStorage.setItem('aa_broker', data.data.broker);
+                localStorage.setItem('aa_client_id', data.data.client_id);
                 
                 onLoginSuccess(data.data.apikey);
             } else {

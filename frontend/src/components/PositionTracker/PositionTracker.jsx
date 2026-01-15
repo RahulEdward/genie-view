@@ -418,7 +418,7 @@ const PositionTracker = ({
           <div className={styles.emptyState}>
             <p className={styles.emptyTitle}>API not connected</p>
             <p className={styles.emptySubtitle}>
-              Connect to OpenAlgo API to track positions
+              Connect to AngelAlgo API to track positions
             </p>
           </div>
         ) : isLoading ? (

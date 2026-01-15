@@ -1,6 +1,6 @@
 /**
- * OpenAlgo API Service
- * Handles chart data fetching and WebSocket connections for OpenAlgo backend
+ * AngelAlgo API Service
+ * Handles chart data fetching and WebSocket connections for AngelAlgo backend
  */
 
 import logger from '../utils/logger.js';
@@ -26,7 +26,7 @@ const MAX_PREV_CLOSE_CACHE_SIZE = 200; // Limit cache size to prevent memory lea
 /**
  * SHARED WEBSOCKET MANAGER - Singleton pattern
  * Maintains a SINGLE WebSocket connection for the entire application.
- * OpenAlgo only supports one WebSocket per API key, so we must share.
+ * AngelAlgo only supports one WebSocket per API key, so we must share.
  */
 class SharedWebSocketManager {
     constructor() {
@@ -114,7 +114,7 @@ class SharedWebSocketManager {
         if (this._ws && this._ws.readyState === WebSocket.OPEN) return;
         if (this._ws && this._ws.readyState === WebSocket.CONNECTING) return;
 
-        const apiKey = localStorage.getItem('oa_apikey');
+        const apiKey = localStorage.getItem('aa_apikey');
         
         // Use proxy in development (when on localhost)
         const isLocalDev = typeof window !== 'undefined' &&
@@ -127,7 +127,7 @@ class SharedWebSocketManager {
             url = `${protocol}//${window.location.host}/ws?apikey=${encodeURIComponent(apiKey)}`;
         } else {
             // Direct connection to backend
-            const wsHost = localStorage.getItem('oa_ws_url') || DEFAULT_WS_HOST;
+            const wsHost = localStorage.getItem('aa_ws_url') || DEFAULT_WS_HOST;
             url = `ws://${wsHost}?apikey=${encodeURIComponent(apiKey)}`;
         }
 
@@ -296,7 +296,7 @@ export const forceCloseAllWebSockets = () => {
  * Get Host URL from localStorage settings or use default
  */
 export const getHostUrl = () => {
-    return localStorage.getItem('oa_host_url') || DEFAULT_HOST;
+    return localStorage.getItem('aa_host_url') || DEFAULT_HOST;
 };
 
 /**
@@ -331,7 +331,7 @@ export const getApiBase = () => {
  */
 export const getLoginUrl = () => {
     // Clear the API key to trigger login form display
-    localStorage.removeItem('oa_apikey');
+    localStorage.removeItem('aa_apikey');
     // Return current origin to reload the app (which will show login form)
     return window.location.origin;
 };
@@ -340,7 +340,7 @@ export const getLoginUrl = () => {
  * Handle 401 Unauthorized - clear auth and reload
  */
 export const handleUnauthorized = () => {
-    localStorage.removeItem('oa_apikey');
+    localStorage.removeItem('aa_apikey');
     window.location.reload();
 };
 
@@ -348,18 +348,18 @@ export const handleUnauthorized = () => {
  * Get WebSocket URL from localStorage settings or use default
  */
 const getWebSocketUrl = () => {
-    const wsHost = localStorage.getItem('oa_ws_url') || DEFAULT_WS_HOST;
+    const wsHost = localStorage.getItem('aa_ws_url') || DEFAULT_WS_HOST;
     return `ws://${wsHost}`;
 };
 
 /**
- * Check if user is authenticated with OpenAlgo
- * OpenAlgo stores API key in localStorage after login
+ * Check if user is authenticated with AngelAlgo
+ * AngelAlgo stores API key in localStorage after login
  */
 export const checkAuth = async () => {
     try {
-        // Check if API key exists in localStorage (set by OpenAlgo after login)
-        const apiKey = localStorage.getItem('oa_apikey');
+        // Check if API key exists in localStorage (set by AngelAlgo after login)
+        const apiKey = localStorage.getItem('aa_apikey');
 
         if (!apiKey || apiKey.trim() === '') {
             // No API key means not logged in
@@ -375,16 +375,16 @@ export const checkAuth = async () => {
 };
 
 /**
- * Get API key from localStorage (set by OpenAlgo after login)
+ * Get API key from localStorage (set by AngelAlgo after login)
  */
 export const getApiKey = () => {
-    return localStorage.getItem('oa_apikey') || '';
+    return localStorage.getItem('aa_apikey') || '';
 };
 
 /**
- * Convert chart interval to OpenAlgo API format
+ * Convert chart interval to AngelAlgo API format
  * Chart uses: 1d, 1w, 1M
- * OpenAlgo uses: D, W, M for daily/weekly/monthly
+ * AngelAlgo uses: D, W, M for daily/weekly/monthly
  */
 const convertInterval = (interval) => {
     const mapping = {
@@ -399,7 +399,7 @@ const convertInterval = (interval) => {
 };
 
 /**
- * Create managed WebSocket with OpenAlgo protocol support
+ * Create managed WebSocket with AngelAlgo protocol support
  * - Authentication on connect
  * - Ping/pong heartbeat handling
  * - Auto-reconnect with re-auth and re-subscribe
@@ -670,21 +670,21 @@ export const getKlines = async (symbol, exchange = 'NSE', interval = '1d', limit
             })
         });
 
-        logger.debug('[OpenAlgo] History request:', { symbol, exchange, interval: convertInterval(interval), start_date: formatDate(startDate), end_date: formatDate(endDate) });
+        logger.debug('[AngelAlgo] History request:', { symbol, exchange, interval: convertInterval(interval), start_date: formatDate(startDate), end_date: formatDate(endDate) });
 
         if (!response.ok) {
             if (response.status === 401) {
                 handleUnauthorized();
                 return [];
             }
-            throw new Error(`OpenAlgo history error: ${response.status} ${response.statusText}`);
+            throw new Error(`AngelAlgo history error: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
-        logger.debug('[OpenAlgo] History response:', data);
+        logger.debug('[AngelAlgo] History response:', data);
 
-        // Transform OpenAlgo response to lightweight-charts format
-        // OpenAlgo returns: { data: [ { timestamp, open, high, low, close, volume }, ... ] }
+        // Transform AngelAlgo response to lightweight-charts format
+        // AngelAlgo returns: { data: [ { timestamp, open, high, low, close, volume }, ... ] }
         // timestamp is in UTC seconds, add IST offset for local display
         const IST_OFFSET_SECONDS = 19800; // 5 hours 30 minutes in seconds
 
@@ -763,15 +763,15 @@ export const getTickerPrice = async (symbol, exchange = 'NSE', signal) => {
                 handleUnauthorized();
                 return null;
             }
-            throw new Error(`OpenAlgo quotes error: ${response.status} ${response.statusText}`);
+            throw new Error(`AngelAlgo quotes error: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
-        logger.debug('[OpenAlgo] Quotes request:', { symbol, exchange });
-        logger.debug('[OpenAlgo] Quotes response:', data);
+        logger.debug('[AngelAlgo] Quotes request:', { symbol, exchange });
+        logger.debug('[AngelAlgo] Quotes response:', data);
 
         // Transform to match Binance response format expected by App.jsx
-        // OpenAlgo returns: { data: { ltp, open, high, low, prev_close, ... }, status: 'success' }
+        // AngelAlgo returns: { data: { ltp, open, high, low, prev_close, ... }, status: 'success' }
         if (data && data.data) {
             const quoteData = data.data;
             const ltp = parseFloat(quoteData.ltp || quoteData.last_price || 0);
@@ -782,7 +782,7 @@ export const getTickerPrice = async (symbol, exchange = 'NSE', signal) => {
             // If prev_close is 0 or invalid, fall back to open price (for day's change calculation)
             if (prevClose <= 0) {
                 prevClose = parseFloat(quoteData.open || ltp);
-                logger.debug('[OpenAlgo] prev_close unavailable, using open as fallback:', prevClose);
+                logger.debug('[AngelAlgo] prev_close unavailable, using open as fallback:', prevClose);
             }
 
             const change = ltp - prevClose;
@@ -844,12 +844,12 @@ export const getDepth = async (symbol, exchange = 'NSE', signal) => {
                 handleUnauthorized();
                 return null;
             }
-            throw new Error(`OpenAlgo depth error: ${response.status} ${response.statusText}`);
+            throw new Error(`AngelAlgo depth error: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
-        logger.debug('[OpenAlgo] Depth request:', { symbol, exchange });
-        logger.debug('[OpenAlgo] Depth response:', data);
+        logger.debug('[AngelAlgo] Depth request:', { symbol, exchange });
+        logger.debug('[AngelAlgo] Depth response:', data);
 
         if (data && data.data) {
             const depthData = data.data;
@@ -893,7 +893,7 @@ const IST_OFFSET_SECONDS = 19800; // 5 hours 30 minutes
 
 /**
  * Subscribe to real-time ticker updates via WebSocket
- * Uses SHARED WebSocket to prevent connection conflicts with OpenAlgo (1 conn per API key)
+ * Uses SHARED WebSocket to prevent connection conflicts with AngelAlgo (1 conn per API key)
  * @param {string} symbol - Trading symbol
  * @param {string} exchange - Exchange code
  * @param {string} interval - Interval for candle updates
@@ -945,7 +945,7 @@ export const subscribeToTicker = (symbol, exchange = 'NSE', interval, callback) 
 };
 /**
  * Subscribe to multiple tickers for watchlist
- * Uses SHARED WebSocket to prevent connection conflicts with OpenAlgo (1 conn per API key)
+ * Uses SHARED WebSocket to prevent connection conflicts with AngelAlgo (1 conn per API key)
  * @param {Array<{symbol: string, exchange: string}>} symbols - Array of symbol objects
  * @param {function} callback - Callback for each update
  */
@@ -1031,7 +1031,7 @@ export const searchSymbols = async (query, exchange, instrumenttype) => {
                 handleUnauthorized();
                 return [];
             }
-            throw new Error(`OpenAlgo search error: ${response.status}`);
+            throw new Error(`AngelAlgo search error: ${response.status}`);
         }
 
         const data = await response.json();
@@ -1060,12 +1060,12 @@ export const getIntervals = async () => {
         });
 
         if (!response.ok) {
-            console.warn('[OpenAlgo] Intervals API returned:', response.status);
+            console.warn('[AngelAlgo] Intervals API returned:', response.status);
             return null;
         }
 
         const data = await response.json();
-        logger.debug('[OpenAlgo] Intervals response:', data);
+        logger.debug('[AngelAlgo] Intervals response:', data);
 
         // API returns { data: { seconds: [...], minutes: [...], ... }, status: 'success' }
         if (data && data.data && data.status === 'success') {
@@ -1107,20 +1107,20 @@ export const getHistoricalKlines = async (symbol, exchange = 'NSE', interval = '
             })
         });
 
-        logger.debug('[OpenAlgo] Historical request:', { symbol, exchange, interval: convertInterval(interval), start_date: startDate, end_date: endDate });
+        logger.debug('[AngelAlgo] Historical request:', { symbol, exchange, interval: convertInterval(interval), start_date: startDate, end_date: endDate });
 
         if (!response.ok) {
             if (response.status === 401) {
                 handleUnauthorized();
                 return [];
             }
-            throw new Error(`OpenAlgo history error: ${response.status} ${response.statusText}`);
+            throw new Error(`AngelAlgo history error: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
-        logger.debug('[OpenAlgo] Historical response:', data);
+        logger.debug('[AngelAlgo] Historical response:', data);
 
-        // Transform OpenAlgo response to lightweight-charts format
+        // Transform AngelAlgo response to lightweight-charts format
         const IST_OFFSET_SECONDS = 19800; // 5 hours 30 minutes in seconds
 
         if (data && data.data && Array.isArray(data.data)) {
@@ -1177,26 +1177,26 @@ export const fetchUserPreferences = async () => {
         const apiKey = getApiKey();
         const apiBase = getApiBase();
 
-        logger.info('[OpenAlgo] fetchUserPreferences called');
-        logger.debug('[OpenAlgo] API Key present:', !!apiKey, 'API Base:', apiBase);
+        logger.info('[AngelAlgo] fetchUserPreferences called');
+        logger.debug('[AngelAlgo] API Key present:', !!apiKey, 'API Base:', apiBase);
 
         if (!apiKey) {
-            logger.warn('[OpenAlgo] fetchUserPreferences: No API key found');
+            logger.warn('[AngelAlgo] fetchUserPreferences: No API key found');
             return { data: null, invalidApiKey: true };
         }
 
         const url = `${apiBase}/chart?apikey=${encodeURIComponent(apiKey)}`;
-        logger.info('[OpenAlgo] Fetching preferences from:', url);
+        logger.info('[AngelAlgo] Fetching preferences from:', url);
 
         const response = await fetch(url, {
             method: 'GET',
             credentials: 'include'
         });
 
-        logger.info('[OpenAlgo] fetchUserPreferences response status:', response.status);
+        logger.info('[AngelAlgo] fetchUserPreferences response status:', response.status);
 
         if (!response.ok) {
-            logger.warn('[OpenAlgo] Fetch preferences failed:', response.status, response.statusText);
+            logger.warn('[AngelAlgo] Fetch preferences failed:', response.status, response.statusText);
             // 400, 401, 403 = Invalid API key
             if (response.status === 400 || response.status === 401 || response.status === 403) {
                 return { data: null, invalidApiKey: true };
@@ -1208,10 +1208,10 @@ export const fetchUserPreferences = async () => {
         const result = await response.json();
         // Response format: { status: 'success', data: {...prefs...} }
         const data = result.data || result;
-        logger.info('[OpenAlgo] fetchUserPreferences received data:', Object.keys(data || {}));
+        logger.info('[AngelAlgo] fetchUserPreferences received data:', Object.keys(data || {}));
         return { data, invalidApiKey: false };
     } catch (error) {
-        logger.error('[OpenAlgo] Error fetching user preferences:', error);
+        logger.error('[AngelAlgo] Error fetching user preferences:', error);
         return { data: null, invalidApiKey: false };
     }
 };
@@ -1225,16 +1225,16 @@ export const saveUserPreferences = async (preferences) => {
         const apiKey = getApiKey();
         const apiBase = getApiBase();
 
-        logger.info('[OpenAlgo] saveUserPreferences called with keys:', Object.keys(preferences || {}));
-        logger.debug('[OpenAlgo] API Key present:', !!apiKey, 'API Base:', apiBase);
+        logger.info('[AngelAlgo] saveUserPreferences called with keys:', Object.keys(preferences || {}));
+        logger.debug('[AngelAlgo] API Key present:', !!apiKey, 'API Base:', apiBase);
 
         if (!apiKey) {
-            logger.warn('[OpenAlgo] saveUserPreferences: No API key found, returning false');
+            logger.warn('[AngelAlgo] saveUserPreferences: No API key found, returning false');
             return false;
         }
 
         const url = `${apiBase}/chart`;
-        logger.info('[OpenAlgo] Saving preferences to:', url);
+        logger.info('[AngelAlgo] Saving preferences to:', url);
 
         // Include apikey in body along with preferences
         const response = await fetch(url, {
@@ -1246,17 +1246,17 @@ export const saveUserPreferences = async (preferences) => {
             body: JSON.stringify({ apikey: apiKey, ...preferences })
         });
 
-        logger.info('[OpenAlgo] saveUserPreferences response status:', response.status);
+        logger.info('[AngelAlgo] saveUserPreferences response status:', response.status);
 
         if (!response.ok) {
-            logger.warn('[OpenAlgo] Save preferences failed:', response.status, response.statusText);
+            logger.warn('[AngelAlgo] Save preferences failed:', response.status, response.statusText);
             return false;
         }
 
-        logger.info('[OpenAlgo] saveUserPreferences success!');
+        logger.info('[AngelAlgo] saveUserPreferences success!');
         return true;
     } catch (error) {
-        logger.error('[OpenAlgo] Error saving user preferences:', error);
+        logger.error('[AngelAlgo] Error saving user preferences:', error);
         return false;
     }
 };
@@ -1277,7 +1277,7 @@ export const getExpiry = async (symbol, exchange = 'NFO', instrumentType = 'opti
             instrumenttype: instrumentType
         };
 
-        logger.debug('[OpenAlgo] Expiry request:', requestBody);
+        logger.debug('[AngelAlgo] Expiry request:', requestBody);
 
         const response = await fetch(`${getApiBase()}/expiry`, {
             method: 'POST',
@@ -1295,14 +1295,14 @@ export const getExpiry = async (symbol, exchange = 'NFO', instrumentType = 'opti
             }
             if (response.status === 400) {
                 const errorData = await response.json().catch(() => ({}));
-                logger.warn('[OpenAlgo] Expiry error:', errorData.message || response.statusText);
+                logger.warn('[AngelAlgo] Expiry error:', errorData.message || response.statusText);
                 return null;
             }
-            throw new Error(`OpenAlgo expiry error: ${response.status} ${response.statusText}`);
+            throw new Error(`AngelAlgo expiry error: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
-        logger.debug('[OpenAlgo] Expiry response:', data);
+        logger.debug('[AngelAlgo] Expiry response:', data);
 
         // Response format: { status, message, data: ["02-JAN-25", "09-JAN-25", ...] }
         if (data && data.status === 'success' && Array.isArray(data.data)) {
@@ -1337,7 +1337,7 @@ export const getOptionChain = async (underlying, exchange = 'NFO', expiryDate = 
             requestBody.expiry_date = expiryDate;
         }
 
-        logger.debug('[OpenAlgo] Option Chain request:', requestBody);
+        logger.debug('[AngelAlgo] Option Chain request:', requestBody);
 
         const response = await fetch(`${getApiBase()}/optionchain`, {
             method: 'POST',
@@ -1360,11 +1360,11 @@ export const getOptionChain = async (underlying, exchange = 'NFO', expiryDate = 
                 error.status = 400;
                 throw error;
             }
-            throw new Error(`OpenAlgo optionchain error: ${response.status} ${response.statusText}`);
+            throw new Error(`AngelAlgo optionchain error: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
-        logger.debug('[OpenAlgo] Option Chain response:', data);
+        logger.debug('[AngelAlgo] Option Chain response:', data);
 
         // Response format: { status, underlying, underlying_ltp, expiry_date, atm_strike, chain: [...] }
         if (data && data.status === 'success') {
@@ -1400,7 +1400,7 @@ export const getOptionGreeks = async (symbol, exchange = 'NFO', options = {}) =>
             ...options // interest_rate, forward_price, underlying_symbol, underlying_exchange, expiry_time
         };
 
-        logger.debug('[OpenAlgo] Option Greeks request:', requestBody);
+        logger.debug('[AngelAlgo] Option Greeks request:', requestBody);
 
         const response = await fetch(`${getApiBase()}/optiongreeks`, {
             method: 'POST',
@@ -1416,11 +1416,11 @@ export const getOptionGreeks = async (symbol, exchange = 'NFO', options = {}) =>
                 handleUnauthorized();
                 return null;
             }
-            throw new Error(`OpenAlgo optiongreeks error: ${response.status} ${response.statusText}`);
+            throw new Error(`AngelAlgo optiongreeks error: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
-        logger.debug('[OpenAlgo] Option Greeks response:', data);
+        logger.debug('[AngelAlgo] Option Greeks response:', data);
 
         // Response includes: symbol, exchange, underlying, strike, option_type, expiry_date,
         // days_to_expiry, spot_price, option_price, implied_volatility, greeks: { delta, gamma, theta, vega, rho }
@@ -1456,7 +1456,7 @@ export const getOptionGreeks = async (symbol, exchange = 'NFO', options = {}) =>
 export const getMultiOptionGreeks = async (symbols, options = {}) => {
     // Early return if no symbols provided
     if (!symbols || symbols.length === 0) {
-        logger.debug('[OpenAlgo] Multi Option Greeks: No symbols to fetch');
+        logger.debug('[AngelAlgo] Multi Option Greeks: No symbols to fetch');
         return { status: 'success', data: [], summary: { total: 0, success: 0, failed: 0 } };
     }
 
@@ -1468,7 +1468,7 @@ export const getMultiOptionGreeks = async (symbols, options = {}) => {
     }
 
     // Otherwise, batch into multiple requests
-    logger.debug('[OpenAlgo] Multi Option Greeks: Batching', symbols.length, 'symbols into chunks of', MAX_BATCH_SIZE);
+    logger.debug('[AngelAlgo] Multi Option Greeks: Batching', symbols.length, 'symbols into chunks of', MAX_BATCH_SIZE);
 
     const allData = [];
     let totalSuccess = 0;
@@ -1504,7 +1504,7 @@ const fetchMultiGreeksBatch = async (symbols, options = {}) => {
             ...options
         };
 
-        logger.debug('[OpenAlgo] Multi Option Greeks batch request:', { count: symbols.length });
+        logger.debug('[AngelAlgo] Multi Option Greeks batch request:', { count: symbols.length });
 
         const response = await fetch(`${getApiBase()}/multioptiongreeks`, {
             method: 'POST',
@@ -1520,11 +1520,11 @@ const fetchMultiGreeksBatch = async (symbols, options = {}) => {
                 handleUnauthorized();
                 return null;
             }
-            throw new Error(`OpenAlgo multioptiongreeks error: ${response.status} ${response.statusText}`);
+            throw new Error(`AngelAlgo multioptiongreeks error: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
-        logger.debug('[OpenAlgo] Multi Option Greeks batch response:', data.summary);
+        logger.debug('[AngelAlgo] Multi Option Greeks batch response:', data.summary);
 
         // Handle success, partial, or error - always return structure if we have data
         if (data && data.data) {
@@ -1557,7 +1557,7 @@ export const fetchExpiryDates = async (symbol, exchange = 'NFO', instrumenttype 
             instrumenttype
         };
 
-        logger.debug('[OpenAlgo] Expiry API request:', requestBody);
+        logger.debug('[AngelAlgo] Expiry API request:', requestBody);
 
         const response = await fetch(`${getApiBase()}/expiry`, {
             method: 'POST',
@@ -1580,11 +1580,11 @@ export const fetchExpiryDates = async (symbol, exchange = 'NFO', instrumenttype 
                 error.status = 400;
                 throw error;
             }
-            throw new Error(`OpenAlgo expiry error: ${response.status} ${response.statusText}`);
+            throw new Error(`AngelAlgo expiry error: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
-        logger.debug('[OpenAlgo] Expiry API response:', data);
+        logger.debug('[AngelAlgo] Expiry API response:', data);
 
         // Response format: { status: 'success', data: ['10-JUL-25', '17-JUL-25', ...], message: '...' }
         if (data && data.status === 'success' && Array.isArray(data.data)) {
@@ -1621,7 +1621,7 @@ export const ping = async () => {
         });
 
         if (!response.ok) {
-            logger.warn('[OpenAlgo] Ping failed:', response.status);
+            logger.warn('[AngelAlgo] Ping failed:', response.status);
             return null;
         }
 
@@ -1631,7 +1631,7 @@ export const ping = async () => {
         }
         return null;
     } catch (error) {
-        console.error('[OpenAlgo] Ping error:', error);
+        console.error('[AngelAlgo] Ping error:', error);
         return null;
     }
 };
@@ -1653,7 +1653,7 @@ export const getFunds = async () => {
         });
 
         if (!response.ok) {
-            logger.warn('[OpenAlgo] Funds API failed:', response.status);
+            logger.warn('[AngelAlgo] Funds API failed:', response.status);
             return null;
         }
 
@@ -1663,7 +1663,7 @@ export const getFunds = async () => {
         }
         return null;
     } catch (error) {
-        console.error('[OpenAlgo] Funds error:', error);
+        console.error('[AngelAlgo] Funds error:', error);
         return null;
     }
 };
@@ -1685,7 +1685,7 @@ export const getPositionBook = async () => {
         });
 
         if (!response.ok) {
-            logger.warn('[OpenAlgo] PositionBook API failed:', response.status);
+            logger.warn('[AngelAlgo] PositionBook API failed:', response.status);
             return [];
         }
 
@@ -1695,7 +1695,7 @@ export const getPositionBook = async () => {
         }
         return [];
     } catch (error) {
-        console.error('[OpenAlgo] PositionBook error:', error);
+        console.error('[AngelAlgo] PositionBook error:', error);
         return [];
     }
 };
@@ -1717,7 +1717,7 @@ export const getOrderBook = async () => {
         });
 
         if (!response.ok) {
-            logger.warn('[OpenAlgo] OrderBook API failed:', response.status);
+            logger.warn('[AngelAlgo] OrderBook API failed:', response.status);
             return { orders: [], statistics: {} };
         }
 
@@ -1727,7 +1727,7 @@ export const getOrderBook = async () => {
         }
         return { orders: [], statistics: {} };
     } catch (error) {
-        console.error('[OpenAlgo] OrderBook error:', error);
+        console.error('[AngelAlgo] OrderBook error:', error);
         return { orders: [], statistics: {} };
     }
 };
@@ -1749,7 +1749,7 @@ export const getTradeBook = async () => {
         });
 
         if (!response.ok) {
-            logger.warn('[OpenAlgo] TradeBook API failed:', response.status);
+            logger.warn('[AngelAlgo] TradeBook API failed:', response.status);
             return [];
         }
 
@@ -1759,7 +1759,7 @@ export const getTradeBook = async () => {
         }
         return [];
     } catch (error) {
-        console.error('[OpenAlgo] TradeBook error:', error);
+        console.error('[AngelAlgo] TradeBook error:', error);
         return [];
     }
 };
@@ -1781,7 +1781,7 @@ export const getHoldings = async () => {
         });
 
         if (!response.ok) {
-            logger.warn('[OpenAlgo] Holdings API failed:', response.status);
+            logger.warn('[AngelAlgo] Holdings API failed:', response.status);
             return { holdings: [], statistics: {} };
         }
 
@@ -1791,7 +1791,7 @@ export const getHoldings = async () => {
         }
         return { holdings: [], statistics: {} };
     } catch (error) {
-        console.error('[OpenAlgo] Holdings error:', error);
+        console.error('[AngelAlgo] Holdings error:', error);
         return { holdings: [], statistics: {} };
     }
 };
@@ -1835,7 +1835,7 @@ export const placeOrder = async (orderDetails) => {
             disclosed_quantity: 0
         };
 
-        logger.debug('[OpenAlgo] Place Order request:', requestBody);
+        logger.debug('[AngelAlgo] Place Order request:', requestBody);
 
         const response = await fetch(`${getApiBase()}/placeorder`, {
             method: 'POST',
@@ -1850,7 +1850,7 @@ export const placeOrder = async (orderDetails) => {
         }
 
         const data = await response.json();
-        logger.debug('[OpenAlgo] Place Order response:', data);
+        logger.debug('[AngelAlgo] Place Order response:', data);
 
         if (data.status === 'success') {
             return {
@@ -1865,7 +1865,7 @@ export const placeOrder = async (orderDetails) => {
             };
         }
     } catch (error) {
-        console.error('[OpenAlgo] Place Order error:', error);
+        console.error('[AngelAlgo] Place Order error:', error);
         return {
             status: 'error',
             message: error.message
@@ -1888,7 +1888,7 @@ export const modifyOrder = async (orderDetails) => {
             ...orderDetails
         };
 
-        logger.debug('[OpenAlgo] Modify Order request:', requestBody);
+        logger.debug('[AngelAlgo] Modify Order request:', requestBody);
 
         const response = await fetch(`${getApiBase()}/modifyorder`, {
             method: 'POST',
@@ -1903,7 +1903,7 @@ export const modifyOrder = async (orderDetails) => {
         }
 
         const data = await response.json();
-        logger.debug('[OpenAlgo] Modify Order response:', data);
+        logger.debug('[AngelAlgo] Modify Order response:', data);
 
         if (data.status === 'success') {
             return {
@@ -1918,7 +1918,7 @@ export const modifyOrder = async (orderDetails) => {
             };
         }
     } catch (error) {
-        console.error('[OpenAlgo] Modify Order error:', error);
+        console.error('[AngelAlgo] Modify Order error:', error);
         return {
             status: 'error',
             message: error.message
@@ -1946,7 +1946,7 @@ export const cancelOrder = async (orderDetails) => {
             ...requestPayload
         };
 
-        logger.debug('[OpenAlgo] Cancel Order request:', requestBody);
+        logger.debug('[AngelAlgo] Cancel Order request:', requestBody);
 
         const response = await fetch(`${getApiBase()}/cancelorder`, {
             method: 'POST',
@@ -1961,7 +1961,7 @@ export const cancelOrder = async (orderDetails) => {
         }
 
         const data = await response.json();
-        logger.debug('[OpenAlgo] Cancel Order response:', data);
+        logger.debug('[AngelAlgo] Cancel Order response:', data);
 
         if (data.status === 'success') {
             return {
@@ -1975,7 +1975,7 @@ export const cancelOrder = async (orderDetails) => {
             };
         }
     } catch (error) {
-        console.error('[OpenAlgo] Cancel Order error:', error);
+        console.error('[AngelAlgo] Cancel Order error:', error);
         return {
             status: 'error',
             message: error.message
@@ -2001,7 +2001,7 @@ export const saveDrawings = async (symbol, exchange = 'NSE', interval = '1d', dr
     try {
         const apiKey = getApiKey();
         if (!apiKey) {
-            logger.warn('[OpenAlgo] saveDrawings: No API key');
+            logger.warn('[AngelAlgo] saveDrawings: No API key');
             return false;
         }
 
@@ -2021,15 +2021,15 @@ export const saveDrawings = async (symbol, exchange = 'NSE', interval = '1d', dr
         });
 
         if (!response.ok) {
-            console.error('[OpenAlgo] saveDrawings error:', response.status);
+            console.error('[AngelAlgo] saveDrawings error:', response.status);
             return false;
         }
 
         const data = await response.json();
-        logger.debug('[OpenAlgo] saveDrawings success:', { symbol, exchange, interval, count: drawings.length });
+        logger.debug('[AngelAlgo] saveDrawings success:', { symbol, exchange, interval, count: drawings.length });
         return data.status === 'success';
     } catch (error) {
-        console.error('[OpenAlgo] Error saving drawings:', error);
+        console.error('[AngelAlgo] Error saving drawings:', error);
         return false;
     }
 };
@@ -2050,10 +2050,10 @@ export const loadDrawings = async (symbol, exchange = 'NSE', interval = '1d') =>
             const drawings = typeof window._chartPrefsCache[drawingsKey] === 'string'
                 ? JSON.parse(window._chartPrefsCache[drawingsKey])
                 : window._chartPrefsCache[drawingsKey];
-            console.log('[OpenAlgo] loadDrawings from cache:', { symbol, exchange, interval, count: drawings.length });
+            console.log('[AngelAlgo] loadDrawings from cache:', { symbol, exchange, interval, count: drawings.length });
             return drawings;
         } catch (parseError) {
-            console.warn('[OpenAlgo] Failed to parse cached drawings:', parseError);
+            console.warn('[AngelAlgo] Failed to parse cached drawings:', parseError);
         }
     }
 
@@ -2061,7 +2061,7 @@ export const loadDrawings = async (symbol, exchange = 'NSE', interval = '1d') =>
     try {
         const apiKey = getApiKey();
         if (!apiKey) {
-            logger.debug('[OpenAlgo] loadDrawings: No API key, skipping');
+            logger.debug('[AngelAlgo] loadDrawings: No API key, skipping');
             return null;
         }
 
@@ -2072,7 +2072,7 @@ export const loadDrawings = async (symbol, exchange = 'NSE', interval = '1d') =>
 
         // 400 likely means no data saved yet - treat as empty result
         if (response.status === 400) {
-            logger.debug('[OpenAlgo] loadDrawings: No saved preferences yet');
+            logger.debug('[AngelAlgo] loadDrawings: No saved preferences yet');
             return null;
         }
 
@@ -2080,7 +2080,7 @@ export const loadDrawings = async (symbol, exchange = 'NSE', interval = '1d') =>
             if (response.status === 401) {
                 return null;
             }
-            logger.debug('[OpenAlgo] loadDrawings status:', response.status);
+            logger.debug('[AngelAlgo] loadDrawings status:', response.status);
             return null;
         }
 
@@ -2096,10 +2096,10 @@ export const loadDrawings = async (symbol, exchange = 'NSE', interval = '1d') =>
             if (drawingsJson) {
                 try {
                     const drawings = JSON.parse(drawingsJson);
-                    console.log('[OpenAlgo] loadDrawings success:', { symbol, exchange, interval, count: drawings.length });
+                    console.log('[AngelAlgo] loadDrawings success:', { symbol, exchange, interval, count: drawings.length });
                     return drawings;
                 } catch (parseError) {
-                    console.warn('[OpenAlgo] Failed to parse drawings JSON:', parseError);
+                    console.warn('[AngelAlgo] Failed to parse drawings JSON:', parseError);
                     return null;
                 }
             }
@@ -2107,7 +2107,7 @@ export const loadDrawings = async (symbol, exchange = 'NSE', interval = '1d') =>
 
         return null;
     } catch (error) {
-        logger.debug('[OpenAlgo] loadDrawings error:', error.message);
+        logger.debug('[AngelAlgo] loadDrawings error:', error.message);
         return null;
     }
 };

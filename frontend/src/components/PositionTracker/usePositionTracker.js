@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { getTickerPrice, subscribeToMultiTicker } from '../../services/openalgo';
+import { getTickerPrice, subscribeToMultiTicker } from '../../services/angelalgo';
 
 // Market timing constants (IST)
 const MARKET_OPEN = { hour: 9, minute: 15 };

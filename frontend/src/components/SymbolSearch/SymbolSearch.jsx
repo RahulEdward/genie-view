@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Search, X, Check, Star } from 'lucide-react';
 import styles from './SymbolSearch.module.css';
-import { searchSymbols } from '../../services/openalgo';
+import { searchSymbols } from '../../services/angelalgo';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { useKeyboardNav, useListNavigation } from '../../hooks/useKeyboardNav';
 import { useSymbolHistory } from '../../hooks/useSymbolHistory';

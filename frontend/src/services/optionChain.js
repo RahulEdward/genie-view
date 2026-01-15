@@ -1,9 +1,9 @@
 /**
  * Option Chain Service
- * Handles option chain fetching using OpenAlgo Option Chain API
+ * Handles option chain fetching using AngelAlgo Option Chain API
  */
 
-import { getOptionChain as fetchOptionChainAPI, getOptionGreeks, getMultiOptionGreeks, getKlines, searchSymbols, getExpiry, fetchExpiryDates } from './openalgo';
+import { getOptionChain as fetchOptionChainAPI, getOptionGreeks, getMultiOptionGreeks, getKlines, searchSymbols, getExpiry, fetchExpiryDates } from './angelalgo';
 
 // ==================== OPTION CHAIN CACHE ====================
 // Cache to reduce API calls and avoid Upstox rate limits (30 req/min)
@@ -261,7 +261,7 @@ export const formatExpiryTab = (expiryStr, index) => {
 };
 
 /**
- * Get option chain for an underlying using OpenAlgo Option Chain API
+ * Get option chain for an underlying using AngelAlgo Option Chain API
  * Uses caching to reduce API calls and avoid Upstox rate limits
  * @param {string} underlying - Underlying symbol (NIFTY, BANKNIFTY)
  * @param {string} exchange - Exchange (NFO, BFO) - will be converted to index exchange for API
@@ -320,7 +320,7 @@ export const getOptionChain = async (underlying, exchange = 'NFO', expiryDate = 
         // Update last API call time
         lastApiCallTime = Date.now();
 
-        // Call OpenAlgo Option Chain API with the F&O exchange (NFO/BFO)
+        // Call AngelAlgo Option Chain API with the F&O exchange (NFO/BFO)
         const result = await fetchOptionChainAPI(underlying, optionExchange, expiryDate, strikeCount);
 
         if (!result) {

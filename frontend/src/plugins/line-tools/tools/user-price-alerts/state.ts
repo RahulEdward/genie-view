@@ -10,12 +10,12 @@ export interface AlertNotificationSettings {
 	playSound: boolean;        // Play alarm sound (default: true)
 	webhookEnabled: boolean;   // Enable webhook (default: false)
 	webhookUrl?: string;       // Custom webhook URL
-	webhookMode?: 'openalgo' | 'custom'; // Webhook type
-	// OpenAlgo specific settings
-	openalgoAction?: 'BUY' | 'SELL';
-	openalgoProduct?: 'MIS' | 'CNC' | 'NRML';
-	openalgoQuantity?: number;
-	openalgoPricetype?: 'MARKET' | 'LIMIT';
+	webhookMode?: 'angelalgo' | 'custom'; // Webhook type
+	// AngelAlgo specific settings
+	angelalgoAction?: 'BUY' | 'SELL';
+	angelalgoProduct?: 'MIS' | 'CNC' | 'NRML';
+	angelalgoQuantity?: number;
+	angelalogPricetype?: 'MARKET' | 'LIMIT';
 	// Custom message template
 	message?: string; // Template with {{variables}}
 	// Telegram notification
@@ -29,11 +29,11 @@ export const DEFAULT_NOTIFICATION_SETTINGS: AlertNotificationSettings = {
 	showToast: true,
 	playSound: true,
 	webhookEnabled: false,
-	webhookMode: 'openalgo',
-	openalgoAction: 'BUY',
-	openalgoProduct: 'MIS',
-	openalgoQuantity: 1,
-	openalgoPricetype: 'MARKET',
+	webhookMode: 'angelalgo',
+	angelalgoAction: 'BUY',
+	angelalgoProduct: 'MIS',
+	angelalgoQuantity: 1,
+	angelalogPricetype: 'MARKET',
 	message: '{{symbol}} {{condition}} {{price}}',
 	telegramEnabled: false
 };

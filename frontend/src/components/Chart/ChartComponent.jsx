@@ -12,7 +12,7 @@ import styles from './ChartComponent.module.css';
 import IndicatorLegend from './IndicatorLegend';
 import IndicatorSettingsDialog from '../IndicatorSettings/IndicatorSettingsDialog';
 import { getIndicatorConfig } from '../IndicatorSettings/indicatorConfigs';
-import { getKlines, getHistoricalKlines, subscribeToTicker, saveDrawings, loadDrawings } from '../../services/openalgo';
+import { getKlines, getHistoricalKlines, subscribeToTicker, saveDrawings, loadDrawings } from '../../services/angelalgo';
 import { combinePremiumOHLC, combineMultiLegOHLC } from '../../services/optionChain';
 import { getAccurateISTTimestamp, syncTimeWithAPI, shouldResync } from '../../services/timeService';
 import {
@@ -1616,7 +1616,7 @@ const ChartComponent = forwardRef(({
                 // Calculate date range for older data
                 // Go back further based on interval type
                 const oldestTime = oldestLoadedTimeRef.current;
-                const IST_OFFSET_SECONDS = 19800; // Same offset used in openalgo.js
+                const IST_OFFSET_SECONDS = 19800; // Same offset used in angelalgo.js
                 const oldestDate = new Date((oldestTime - IST_OFFSET_SECONDS) * 1000);
 
                 // End date is 1 day before oldest loaded (to avoid overlap)

@@ -10,7 +10,7 @@ vi.mock('./components/Layout/Layout', () => ({
 }));
 
 // Mock services
-vi.mock('./services/openalgo', () => ({
+vi.mock('./services/angelalgo', () => ({
     checkAuth: vi.fn().mockResolvedValue(true),
     // Add other mocked exports if needed by App
 }));

@@ -5,7 +5,7 @@ const DEFAULT_HOST = 'http://127.0.0.1:8000';
 
 const ApiKeyDialog = ({ onSave, onClose }) => {
     const [hostUrl, setHostUrl] = useState(() => {
-        return localStorage.getItem('oa_host_url') || DEFAULT_HOST;
+        return localStorage.getItem('aa_host_url') || DEFAULT_HOST;
     });
     const [apiKey, setApiKey] = useState('');
     const [showApiKey, setShowApiKey] = useState(false);
@@ -24,7 +24,7 @@ const ApiKeyDialog = ({ onSave, onClose }) => {
 
         try {
             // Save host URL before validation
-            localStorage.setItem('oa_host_url', hostUrl);
+            localStorage.setItem('aa_host_url', hostUrl);
 
             // For local development, use relative path to leverage Vite proxy
             // This avoids CORS issues when frontend (localhost:5001) calls backend (127.0.0.1:8000)
@@ -44,7 +44,7 @@ const ApiKeyDialog = ({ onSave, onClose }) => {
 
             if (response.ok) {
                 // API key is valid - save API key
-                localStorage.setItem('oa_apikey', apiKey.trim());
+                localStorage.setItem('aa_apikey', apiKey.trim());
 
                 // Parse and save preferences directly from the validation response
                 // This eliminates the need for a separate cloud sync fetch
@@ -75,7 +75,7 @@ const ApiKeyDialog = ({ onSave, onClose }) => {
             }
         } catch (err) {
             console.error('[ApiKeyDialog] Validation error:', err);
-            setError('Could not connect to OpenAlgo server. Please check if the server is running.');
+            setError('Could not connect to AngelAlgo server. Please check if the server is running.');
         } finally {
             setIsValidating(false);
         }
@@ -135,7 +135,7 @@ const ApiKeyDialog = ({ onSave, onClose }) => {
                     fontSize: '18px',
                     fontWeight: 500
                 }}>
-                    Connect to OpenAlgo
+                    Connect to AngelAlgo
                 </h2>
                 <p style={{
                     margin: '0 0 20px 0',
@@ -143,7 +143,7 @@ const ApiKeyDialog = ({ onSave, onClose }) => {
                     fontSize: '13px',
                     lineHeight: 1.5
                 }}>
-                    Configure your OpenAlgo server connection.
+                    Configure your AngelAlgo server connection.
                 </p>
 
                 <form onSubmit={handleSubmit}>
@@ -219,7 +219,7 @@ const ApiKeyDialog = ({ onSave, onClose }) => {
                                 rel="noopener noreferrer"
                                 style={{ color: '#2962ff' }}
                             >
-                                OpenAlgo Dashboard
+                                AngelAlgo Dashboard
                             </a >
                         </p >
                     </div >
@@ -243,7 +243,7 @@ const ApiKeyDialog = ({ onSave, onClose }) => {
                                 textDecoration: 'none'
                             }}
                         >
-                            Login to OpenAlgo
+                            Login to AngelAlgo
                         </a>
                         <button
                             type="submit"

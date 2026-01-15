@@ -8,7 +8,7 @@
  */
 
 import logger from '../utils/logger.js';
-import { getApiBase, getApiKey } from './openalgo.js';
+import { getApiBase, getApiKey } from './angelalgo.js';
 
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour cache
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // 5h 30m in milliseconds

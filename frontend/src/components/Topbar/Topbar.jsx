@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import styles from './Topbar.module.css';
 import classNames from 'classnames';
 import { intervalToSeconds } from '../../utils/timeframes';
-import { getIntervals } from '../../services/openalgo';
+import { getIntervals } from '../../services/angelalgo';
 import { logger } from '../../utils/logger.js';
 import Tooltip from '../Tooltip/Tooltip';
 import {

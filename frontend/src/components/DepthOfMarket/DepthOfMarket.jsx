@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { getDepth } from '../../services/openalgo';
+import { getDepth } from '../../services/angelalgo';
 import { X, RefreshCw, Layers } from 'lucide-react';
 import styles from './DepthOfMarket.module.css';
 

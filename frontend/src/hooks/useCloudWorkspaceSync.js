@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import openalgo from '../services/openalgo';
+import angelalgo from '../services/angelalgo';
 import logger from '../utils/logger';
 
 // Debounce delay in milliseconds (2 seconds for quicker UX)
@@ -29,8 +29,8 @@ const SYNC_KEYS = [
     'tv_favorite_drawing_tools', // Favorite drawing tools
     'tv_floating_toolbar_pos', // Floating toolbar position
     'tv_recent_commands',    // Recent commands
-    'oa_session_break_visible', // Session break visibility setting
-    'oa_timer_visible'       // Timer visibility setting
+    'aa_session_break_visible', // Session break visibility setting
+    'aa_timer_visible'       // Timer visibility setting
 ];
 
 /**
@@ -114,7 +114,7 @@ export const useCloudWorkspaceSync = (isAuthenticated) => {
         const loadPreferences = async () => {
             try {
                 // Create a fetch promise with timeout
-                const fetchPromise = openalgo.fetchUserPreferences();
+                const fetchPromise = angelalgo.fetchUserPreferences();
                 const timeoutPromise = new Promise((resolve) => {
                     timeoutId = setTimeout(() => {
                         if (!isCancelled) {
@@ -231,7 +231,7 @@ export const useCloudWorkspaceSync = (isAuthenticated) => {
 
                         setIsSyncing(true);
                         try {
-                            const success = await openalgo.saveUserPreferences(toSave);
+                            const success = await angelalgo.saveUserPreferences(toSave);
                             if (success) {
                                 // Update last saved state
                                 Object.entries(toSave).forEach(([key, val]) => {

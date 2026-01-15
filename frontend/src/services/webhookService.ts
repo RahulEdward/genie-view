@@ -1,10 +1,10 @@
 /**
  * Webhook Service
  * Handles sending POST requests when alerts trigger.
- * Supports both OpenAlgo trading API and custom webhook URLs.
+ * Supports both AngelAlgo trading API and custom webhook URLs.
  */
 
-import { getApiKey, getApiBase } from './openalgo.js';
+import { getApiKey, getApiBase } from './angelalgo.js';
 import logger from '../utils/logger.js';
 
 export interface WebhookPayload {
@@ -18,7 +18,7 @@ export interface WebhookPayload {
     close?: number;
 }
 
-export interface OpenAlgoPayload {
+export interface AngelAlgoPayload {
     apikey: string;
     strategy: string;
     symbol: string;
@@ -57,7 +57,7 @@ function isIndexSymbol(symbol: string, exchange: string): boolean {
     return indexPatterns.some(pattern => pattern.test(symbol));
 }
 
-export interface OpenAlgoSettings {
+export interface AngelAlgoSettings {
     action: 'BUY' | 'SELL';
     product: 'MIS' | 'CNC' | 'NRML';
     quantity: number;
@@ -165,12 +165,12 @@ export async function sendWebhook(url: string, payload: WebhookPayload): Promise
 }
 
 /**
- * Send order to OpenAlgo via the placeorder API.
+ * Send order to AngelAlgo via the placeorder API.
  */
-export async function sendOpenAlgoOrder(
+export async function sendAngelAlgoOrder(
     symbol: string,
     exchange: string,
-    settings: OpenAlgoSettings
+    settings: AngelAlgoSettings
 ): Promise<{ success: boolean; orderid?: string; error?: string }> {
     // Check if symbol is an index - cannot place orders on indices
     if (isIndexSymbol(symbol, exchange)) {
@@ -181,15 +181,15 @@ export async function sendOpenAlgoOrder(
 
     const apiKey = getApiKey();
     if (!apiKey) {
-        logger.warn('[WebhookService] No OpenAlgo API key available');
-        return { success: false, error: 'No API key. Please login to OpenAlgo first.' };
+        logger.warn('[WebhookService] No AngelAlgo API key available');
+        return { success: false, error: 'No API key. Please login to AngelAlgo first.' };
     }
 
     const apiBase = getApiBase();
     const url = `${apiBase}/placeorder`;
 
-    // Build the complete OpenAlgo payload
-    const payload: OpenAlgoPayload = {
+    // Build the complete AngelAlgo payload
+    const payload: AngelAlgoPayload = {
         apikey: apiKey,
         strategy: 'Chart Alert',
         symbol: symbol,
@@ -204,7 +204,7 @@ export async function sendOpenAlgoOrder(
     };
 
     try {
-        logger.info(`[WebhookService] Placing OpenAlgo order: ${settings.action} ${settings.quantity} ${symbol}`);
+        logger.info(`[WebhookService] Placing AngelAlgo order: ${settings.action} ${settings.quantity} ${symbol}`);
 
         const response = await fetch(url, {
             method: 'POST',
@@ -219,21 +219,21 @@ export async function sendOpenAlgoOrder(
 
         if (!response.ok || data.status === 'error') {
             const errorMsg = data.message || `HTTP ${response.status}`;
-            logger.error(`[WebhookService] OpenAlgo order failed: ${errorMsg}`);
+            logger.error(`[WebhookService] AngelAlgo order failed: ${errorMsg}`);
             return { success: false, error: errorMsg };
         }
 
-        logger.info(`[WebhookService] OpenAlgo order placed successfully: ${data.orderid}`);
+        logger.info(`[WebhookService] AngelAlgo order placed successfully: ${data.orderid}`);
         return { success: true, orderid: data.orderid };
     } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
-        logger.error('[WebhookService] Failed to place OpenAlgo order:', errorMsg);
+        logger.error('[WebhookService] Failed to place AngelAlgo order:', errorMsg);
         return { success: false, error: errorMsg };
     }
 }
 
 /**
- * Send notification to Telegram via OpenAlgo API.
+ * Send notification to Telegram via AngelAlgo API.
  */
 export async function sendTelegramNotification(
     message: string,
@@ -241,15 +241,15 @@ export async function sendTelegramNotification(
 ): Promise<{ success: boolean; error?: string }> {
     const apiKey = getApiKey();
     if (!apiKey) {
-        logger.warn('[WebhookService] No OpenAlgo API key available for Telegram');
-        return { success: false, error: 'No API key. Please login to OpenAlgo first.' };
+        logger.warn('[WebhookService] No AngelAlgo API key available for Telegram');
+        return { success: false, error: 'No API key. Please login to AngelAlgo first.' };
     }
 
-    // Get username from localStorage (OpenAlgo login username)
-    const username = localStorage.getItem('oa_username') || '';
+    // Get username from localStorage (AngelAlgo login username)
+    const username = localStorage.getItem('aa_username') || '';
     if (!username) {
-        logger.warn('[WebhookService] No username found. Please login to OpenAlgo.');
-        return { success: false, error: 'No username found. Please login to OpenAlgo.' };
+        logger.warn('[WebhookService] No username found. Please login to AngelAlgo.');
+        return { success: false, error: 'No username found. Please login to AngelAlgo.' };
     }
 
     const apiBase = getApiBase();
@@ -306,10 +306,10 @@ export async function processAlertWebhook(
     },
     webhookSettings: {
         enabled: boolean;
-        mode: 'openalgo' | 'custom';
+        mode: 'angelalgo' | 'custom';
         url?: string;
         message?: string;
-        openalgoSettings?: OpenAlgoSettings;
+        angelalgoSettings?: AngelAlgoSettings;
     }
 ): Promise<{ success: boolean; message: string }> {
     if (!webhookSettings.enabled) {
@@ -329,25 +329,25 @@ export async function processAlertWebhook(
 
     logger.info('[WebhookService] processAlertWebhook called with:', {
         mode: webhookSettings.mode,
-        hasOpenAlgoSettings: !!webhookSettings.openalgoSettings,
+        hasAngelAlgoSettings: !!webhookSettings.angelalgoSettings,
         hasUrl: !!webhookSettings.url,
         url: webhookSettings.url ? '[REDACTED]' : undefined
     });
 
-    // Use OpenAlgo mode by default, or when explicitly set to openalgo
-    const isOpenAlgoMode = webhookSettings.mode === 'openalgo' || !webhookSettings.mode;
+    // Use AngelAlgo mode by default, or when explicitly set to angelalgo
+    const isAngelAlgoMode = webhookSettings.mode === 'angelalgo' || !webhookSettings.mode;
 
-    if (isOpenAlgoMode) {
-        // Always use OpenAlgo path when mode is openalgo, with sensible defaults
-        const settings = webhookSettings.openalgoSettings || {
+    if (isAngelAlgoMode) {
+        // Always use AngelAlgo path when mode is angelalgo, with sensible defaults
+        const settings = webhookSettings.angelalgoSettings || {
             action: 'BUY' as const,
             product: 'MIS' as const,
             quantity: 1,
             pricetype: 'MARKET' as const,
         };
 
-        logger.info('[WebhookService] Using OpenAlgo mode');
-        const result = await sendOpenAlgoOrder(
+        logger.info('[WebhookService] Using AngelAlgo mode');
+        const result = await sendAngelAlgoOrder(
             alertData.symbol,
             alertData.exchange,
             settings

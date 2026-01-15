@@ -29,14 +29,14 @@ const SettingsPopup = ({
     onTimerToggle,
     isSessionBreakVisible = false,
     onSessionBreakToggle,
-    // OpenAlgo settings
+    // AngelAlgo settings
     hostUrl = 'http://127.0.0.1:8000',
     onHostUrlSave,
     apiKey = '',
     onApiKeySave,
     websocketUrl = '127.0.0.1:8765',
     onWebsocketUrlSave,
-    openalgoUsername = '',
+    angelalgoUsername = '',
     onUsernameSave,
     // Chart Appearance settings
     chartAppearance = DEFAULT_CHART_APPEARANCE,
@@ -49,7 +49,7 @@ const SettingsPopup = ({
     const [localHostUrl, setLocalHostUrl] = useState(hostUrl);
     const [localApiKey, setLocalApiKey] = useState(apiKey);
     const [localWsUrl, setLocalWsUrl] = useState(websocketUrl);
-    const [localUsername, setLocalUsername] = useState(openalgoUsername);
+    const [localUsername, setLocalUsername] = useState(angelalgoUsername);
     const [hasChanges, setHasChanges] = useState(false);
     const [showApiKey, setShowApiKey] = useState(false);
     const [localAppearance, setLocalAppearance] = useState(chartAppearance);
@@ -59,10 +59,10 @@ const SettingsPopup = ({
         setLocalHostUrl(hostUrl);
         setLocalApiKey(apiKey);
         setLocalWsUrl(websocketUrl);
-        setLocalUsername(openalgoUsername);
+        setLocalUsername(angelalgoUsername);
         setLocalAppearance(chartAppearance);
         onClose();
-    }, [hostUrl, apiKey, websocketUrl, openalgoUsername, chartAppearance, onClose]);
+    }, [hostUrl, apiKey, websocketUrl, angelalgoUsername, chartAppearance, onClose]);
 
     // Focus trap for accessibility
     const focusTrapRef = useFocusTrap(isOpen);
@@ -87,8 +87,8 @@ const SettingsPopup = ({
     }, [websocketUrl]);
 
     useEffect(() => {
-        setLocalUsername(openalgoUsername);
-    }, [openalgoUsername]);
+        setLocalUsername(angelalgoUsername);
+    }, [angelalgoUsername]);
 
     useEffect(() => {
         setLocalAppearance(chartAppearance);
@@ -99,10 +99,10 @@ const SettingsPopup = ({
         const hasHostChange = localHostUrl !== hostUrl;
         const hasApiKeyChange = localApiKey !== apiKey;
         const hasWsUrlChange = localWsUrl !== websocketUrl;
-        const hasUsernameChange = localUsername !== openalgoUsername;
+        const hasUsernameChange = localUsername !== angelalgoUsername;
         const hasAppearanceChange = JSON.stringify(localAppearance) !== JSON.stringify(chartAppearance);
         setHasChanges(hasHostChange || hasApiKeyChange || hasWsUrlChange || hasUsernameChange || hasAppearanceChange);
-    }, [localHostUrl, localApiKey, localWsUrl, localUsername, localAppearance, hostUrl, apiKey, websocketUrl, openalgoUsername, chartAppearance]);
+    }, [localHostUrl, localApiKey, localWsUrl, localUsername, localAppearance, hostUrl, apiKey, websocketUrl, angelalgoUsername, chartAppearance]);
 
     if (!isOpen) return null;
 
@@ -116,7 +116,7 @@ const SettingsPopup = ({
         if (localWsUrl !== websocketUrl) {
             onWebsocketUrlSave?.(localWsUrl);
         }
-        if (localUsername !== openalgoUsername) {
+        if (localUsername !== angelalgoUsername) {
             onUsernameSave?.(localUsername);
         }
         if (JSON.stringify(localAppearance) !== JSON.stringify(chartAppearance)) {
@@ -138,7 +138,7 @@ const SettingsPopup = ({
             )
         },
         {
-            id: 'openalgo', label: 'OpenAlgo', icon: (
+            id: 'angelalgo', label: 'AngelAlgo', icon: (
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28" width="18" height="18" fill="currentColor">
                     <path d="M14 5a2 2 0 0 0-2 2v2h4V7a2 2 0 0 0-2-2Zm3 4V7a3 3 0 1 0-6 0v2a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2Zm-8 2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1v-8Zm5 3a1 1 0 0 0-.5.13v-.13a.5.5 0 0 0-1 0v2.5a.5.5 0 0 0 1 0v-.13A1 1 0 1 0 14 14Z"></path>
                 </svg>
@@ -238,9 +238,9 @@ const SettingsPopup = ({
                             </div>
                         )}
 
-                        {activeSection === 'openalgo' && (
+                        {activeSection === 'angelalgo' && (
                             <div className={styles.section}>
-                                <h3 className={styles.sectionTitle}>OPENALGO CONNECTION</h3>
+                                <h3 className={styles.sectionTitle}>ANGELALGO CONNECTION</h3>
 
                                 <div className={styles.inputGroup}>
                                     <label className={styles.inputLabel}>Host URL</label>
@@ -252,7 +252,7 @@ const SettingsPopup = ({
                                         className={styles.input}
                                     />
                                     <p className={styles.inputHint}>
-                                        Default: http://127.0.0.1:8000. Change to use a custom OpenAlgo server URL.
+                                        Default: http://127.0.0.1:8000. Change to use a custom AngelAlgo server URL.
                                     </p>
                                 </div>
 
@@ -264,7 +264,7 @@ const SettingsPopup = ({
                                             type={showApiKey ? "text" : "password"}
                                             value={localApiKey}
                                             onChange={(e) => setLocalApiKey(e.target.value)}
-                                            placeholder="Enter your OpenAlgo API key"
+                                            placeholder="Enter your AngelAlgo API key"
                                             className={styles.input}
                                         />
                                         <button
@@ -284,7 +284,7 @@ const SettingsPopup = ({
                                             rel="noopener noreferrer"
                                             className={styles.link}
                                         >
-                                            OpenAlgo Dashboard
+                                            AngelAlgo Dashboard
                                         </a>
                                     </p>
                                 </div>
@@ -299,21 +299,21 @@ const SettingsPopup = ({
                                         className={styles.input}
                                     />
                                     <p className={styles.inputHint}>
-                                        Default: 127.0.0.1:8765. Change to use a custom domain (e.g., openalgo.example.com:8765)
+                                        Default: 127.0.0.1:8765. Change to use a custom domain (e.g., angelalgo.example.com:8765)
                                     </p>
                                 </div>
 
                                 <div className={styles.inputGroup}>
-                                    <label className={styles.inputLabel}>OpenAlgo Username</label>
+                                    <label className={styles.inputLabel}>AngelAlgo Username</label>
                                     <input
                                         type="text"
                                         value={localUsername}
                                         onChange={(e) => setLocalUsername(e.target.value)}
-                                        placeholder="Enter your OpenAlgo login username"
+                                        placeholder="Enter your AngelAlgo login username"
                                         className={styles.input}
                                     />
                                     <p className={styles.inputHint}>
-                                        Your OpenAlgo login username (NOT Telegram username). Required for Telegram notifications.
+                                        Your AngelAlgo login username (NOT Telegram username). Required for Telegram notifications.
                                     </p>
                                 </div>
                             </div>

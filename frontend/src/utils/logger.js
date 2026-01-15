@@ -26,7 +26,7 @@ export const LOG_LEVEL_LABELS = {
 
 // Get initial log level from localStorage or use default
 const getInitialLogLevel = () => {
-    const saved = localStorage.getItem('oa_log_level');
+    const saved = localStorage.getItem('aa_log_level');
     if (saved !== null) {
         const parsed = parseInt(saved, 10);
         if (!isNaN(parsed) && parsed >= 0 && parsed <= 4) {
@@ -47,7 +47,7 @@ let currentLevel = getInitialLogLevel();
 export const setLogLevel = (level) => {
     if (level >= LOG_LEVELS.DEBUG && level <= LOG_LEVELS.NONE) {
         currentLevel = level;
-        localStorage.setItem('oa_log_level', level.toString());
+        localStorage.setItem('aa_log_level', level.toString());
         // Log the change at info level (will show unless NONE)
         if (level < LOG_LEVELS.NONE) {
             console.log(`[Logger] Log level set to: ${LOG_LEVEL_LABELS[level]}`);

@@ -5,7 +5,7 @@ import {
     getFunds,
     getHoldings,
     getTradeBook
-} from '../services/openalgo';
+} from '../services/angelalgo';
 
 export const useTradingData = (isAuthenticated) => {
     const [positions, setPositions] = useState([]);
