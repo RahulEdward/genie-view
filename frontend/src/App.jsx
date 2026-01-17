@@ -35,6 +35,7 @@ import { useOILines } from './hooks/useOILines';
 import { useTradingData } from './hooks/useTradingData';
 import { useTheme } from './context/ThemeContext';
 import { useUser } from './context/UserContext';
+import { OrderProvider } from './context/OrderContext';
 import { indicatorConfigs } from './components/IndicatorSettings/indicatorConfigs';
 
 import PositionTracker from './components/PositionTracker';
@@ -2812,7 +2813,7 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
   }
 
   return (
-    <>
+    <OrderProvider showToast={showToast}>
       <Layout
         isLeftToolbarVisible={showDrawingToolbar}
         isMobile={isMobile}
@@ -3247,7 +3248,7 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
           setIsSectorHeatmapOpen(false);
         }}
       />
-    </>
+    </OrderProvider>
   );
 }
 

@@ -2112,6 +2112,33 @@ export const loadDrawings = async (symbol, exchange = 'NSE', interval = '1d') =>
     }
 };
 
+/**
+ * Get lot size for a symbol (stub implementation)
+ * @param {string} symbol - Symbol name
+ * @param {string} exchange - Exchange (NSE, NFO, etc.)
+ * @returns {Promise<number>} Lot size (1 for equity, actual lot size for F&O)
+ */
+export const getLotSize = async (symbol, exchange = 'NSE') => {
+    try {
+        // For equity, lot size is always 1
+        if (exchange === 'NSE' || exchange === 'BSE') {
+            return 1;
+        }
+        
+        // For F&O, we need to fetch from instruments
+        // For now, return common lot sizes based on symbol patterns
+        if (symbol.includes('NIFTY')) return 50;
+        if (symbol.includes('BANKNIFTY')) return 15;
+        if (symbol.includes('FINNIFTY')) return 40;
+        
+        // Default lot size for other F&O
+        return 1;
+    } catch (error) {
+        logger.error('[AngelAlgo] getLotSize error:', error);
+        return 1; // Default to 1 on error
+    }
+};
+
 export default {
     checkAuth,
     getKlines,
