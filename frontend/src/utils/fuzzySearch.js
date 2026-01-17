@@ -5,9 +5,6 @@
 
 /**
  * Calculate Levenshtein distance between two strings
- * @param {string} a - First string
- * @param {string} b - Second string
- * @returns {number} Edit distance
  */
 export const levenshteinDistance = (a, b) => {
     if (!a || !b) return Math.max(a?.length || 0, b?.length || 0);
@@ -50,9 +47,6 @@ export const levenshteinDistance = (a, b) => {
 
 /**
  * Calculate similarity ratio between two strings (0-1)
- * @param {string} a - First string
- * @param {string} b - Second string
- * @returns {number} Similarity ratio (0-1, higher is more similar)
  */
 export const similarity = (a, b) => {
     if (!a || !b) return 0;
@@ -67,9 +61,6 @@ export const similarity = (a, b) => {
 
 /**
  * Match a query against a target string with scoring
- * @param {string} query - Search query
- * @param {string} target - Target string to match against
- * @returns {{ match: boolean, score: number }} Match result with score
  */
 export const fuzzyMatch = (query, target) => {
     if (!query || !target) {
@@ -136,11 +127,6 @@ export const fuzzyMatch = (query, target) => {
 
 /**
  * Search through items with fuzzy matching
- * @param {string} query - Search query
- * @param {Array} items - Array of items to search
- * @param {string[]} keys - Object keys to search within (default: ['symbol', 'name'])
- * @param {number} minScore - Minimum score threshold (default: 0.2)
- * @returns {Array} Sorted array of matching items with scores
  */
 export const fuzzySearch = (query, items, keys = ['symbol', 'name'], minScore = 0.2) => {
     if (!query || !items || items.length === 0) {
@@ -181,9 +167,6 @@ export const fuzzySearch = (query, items, keys = ['symbol', 'name'], minScore = 
 
 /**
  * Highlight matching portions of text
- * @param {string} text - Original text
- * @param {string} query - Search query to highlight
- * @returns {Array<{ text: string, highlight: boolean }>} Array of text segments
  */
 export const getHighlightSegments = (text, query) => {
     if (!text || !query) {

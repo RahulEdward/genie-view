@@ -1,9 +1,42 @@
 import React, { useEffect, useRef } from 'react';
 import styles from './PriceScaleMenu.module.css';
+import { useUser } from '../../context/UserContext';
+
+// Icons
+const AlertIcon = () => (
+    <svg viewBox="0 0 18 18" width="18" height="18" fill="currentColor">
+        <path d="M9 16c.83 0 1.5-.67 1.5-1.5h-3c0 .83.67 1.5 1.5 1.5zm4.5-4.5V8c0-2.43-1.72-4.44-4-4.9V2.5c0-.55-.45-1-1-1s-1 .45-1 1v.6c-2.28.46-4 2.47-4 4.9v3.5L2 13v.5h14V13l-1.5-1.5z" />
+    </svg>
+);
+
+const SellIcon = () => (
+    <svg viewBox="0 0 18 18" width="18" height="18" fill="currentColor">
+        <path d="M9 4l-4 4h3v6h2V8h3z" transform="rotate(180 9 9)" />
+    </svg>
+);
+
+const BuyIcon = () => (
+    <svg viewBox="0 0 18 18" width="18" height="18" fill="currentColor">
+        <path d="M9 4l-4 4h3v6h2V8h3z" />
+    </svg>
+);
+
+const OrderIcon = () => (
+    <svg viewBox="0 0 18 18" width="18" height="18" fill="currentColor">
+        <path d="M3 3h12v2H3V3zm0 4h12v2H3V7zm0 4h8v2H3v-2zm10 0h2v4h-2v-4zm-2 2h6v2h-6v-2z" />
+    </svg>
+);
+
+const HorizontalLineIcon = () => (
+    <svg viewBox="0 0 18 18" width="18" height="18" fill="currentColor">
+        <path d="M2 9h14v1H2V9z" />
+        <circle cx="9" cy="9.5" r="1.5" />
+    </svg>
+);
 
 /**
  * PriceScaleMenu - A context menu that appears when clicking the + button on the price scale
- * Provides options to add an alert or draw a horizontal line at the clicked price
+ * Provides options to add an alert, trade, or draw a horizontal line at the clicked price
  */
 const PriceScaleMenu = ({
     visible,
@@ -11,11 +44,16 @@ const PriceScaleMenu = ({
     y,
     price,
     symbol,
+    ltp = null,
     onAddAlert,
+    onPlaceSellOrder,
+    onPlaceBuyOrder,
+    onAddOrder,
     onDrawHorizontalLine,
     onClose
 }) => {
     const menuRef = useRef(null);
+    const { isAuthenticated } = useUser();
 
     // Close menu when clicking outside (left or right click)
     useEffect(() => {
@@ -52,7 +90,14 @@ const PriceScaleMenu = ({
     if (!visible) return null;
 
     // Format price for display
-    const formattedPrice = price?.toFixed(2) ?? '0.00';
+    const formattedPrice = price?.toLocaleString('en-IN', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }) ?? '0.00';
+
+    // Determine if clicked price is above or below LTP
+    const isAboveLTP = ltp != null && price != null && price > ltp;
+    const isBelowLTP = ltp != null && price != null && price < ltp;
 
     return (
         <div
@@ -64,6 +109,7 @@ const PriceScaleMenu = ({
                 transform: 'translate(-100%, -50%)' // Position to the left and center vertically
             }}
         >
+            {/* Add Alert */}
             <button
                 className={styles.menuItem}
                 onClick={() => {
@@ -72,15 +118,92 @@ const PriceScaleMenu = ({
                 }}
             >
                 <div className={styles.menuItemContent}>
-                    <svg className={styles.menuItemIcon} viewBox="0 0 18 18" fill="currentColor">
-                        <path d="M9 2a5.5 5.5 0 0 0-5.5 5.5v3.67l-.87 1.74A.75.75 0 0 0 3.3 14h11.4a.75.75 0 0 0 .67-1.09l-.87-1.74V7.5A5.5 5.5 0 0 0 9 2zm0 14a2 2 0 0 1-2-2h4a2 2 0 0 1-2 2z" />
-                    </svg>
+                    <div className={styles.menuItemIcon}><AlertIcon /></div>
                     <span className={styles.menuItemText}>
                         Add alert on {symbol} at {formattedPrice}
                     </span>
                 </div>
                 <span className={styles.menuItemShortcut}>Alt+A</span>
             </button>
+
+            {/* Trading Options (Authenticated only) */}
+            {isAuthenticated && (
+                <>
+                    <div style={{ height: 1, backgroundColor: '#e0e3eb', margin: '4px 0' }} />
+
+                    {/* First order option */}
+                    <button
+                        className={styles.menuItem}
+                        onClick={() => {
+                            if (isAboveLTP || !isBelowLTP) {
+                                // Above LTP or same: Sell Limit
+                                onPlaceSellOrder?.(price, 'LIMIT');
+                            } else {
+                                // Below LTP: Buy Limit
+                                onPlaceBuyOrder?.(price, 'LIMIT');
+                            }
+                            onClose();
+                        }}
+                    >
+                        <div className={styles.menuItemContent}>
+                            <div className={styles.menuItemIcon}>{isAboveLTP || !isBelowLTP ? <SellIcon /> : <BuyIcon />}</div>
+                            <span className={styles.menuItemText}>
+                                {isAboveLTP || !isBelowLTP
+                                    ? `Sell 1 ${symbol} @ ${formattedPrice} limit`
+                                    : `Buy 1 ${symbol} @ ${formattedPrice} limit`
+                                }
+                            </span>
+                        </div>
+                        <span className={styles.menuItemShortcut}>{isAboveLTP || !isBelowLTP ? 'Alt+Shift+S' : 'Alt+Shift+B'}</span>
+                    </button>
+
+                    {/* Second order option */}
+                    <button
+                        className={styles.menuItem}
+                        onClick={() => {
+                            if (isAboveLTP || !isBelowLTP) {
+                                // Above LTP or same: Buy Stop
+                                onPlaceBuyOrder?.(price, 'SL');
+                            } else {
+                                // Below LTP: Sell Stop
+                                onPlaceSellOrder?.(price, 'SL');
+                            }
+                            onClose();
+                        }}
+                    >
+                        <div className={styles.menuItemContent}>
+                            <div className={styles.menuItemIcon}>{isAboveLTP || !isBelowLTP ? <BuyIcon /> : <SellIcon />}</div>
+                            <span className={styles.menuItemText}>
+                                {isAboveLTP || !isBelowLTP
+                                    ? `Buy 1 ${symbol} @ ${formattedPrice} stop`
+                                    : `Sell 1 ${symbol} @ ${formattedPrice} stop`
+                                }
+                            </span>
+                        </div>
+                    </button>
+
+                    {/* Add Order */}
+                    <button
+                        className={styles.menuItem}
+                        onClick={() => {
+                            onAddOrder?.(price);
+                            onClose();
+                        }}
+                    >
+                        <div className={styles.menuItemContent}>
+                            <div className={styles.menuItemIcon}><OrderIcon /></div>
+                            <span className={styles.menuItemText}>
+                                Add order on {symbol} at {formattedPrice}...
+                            </span>
+                        </div>
+                        <span className={styles.menuItemShortcut}>Shift+T</span>
+                    </button>
+                </>
+            )}
+
+            <div style={{ height: 1, backgroundColor: '#e0e3eb', margin: '4px 0' }} />
+
+            {/* Draw Horizontal Line */}
             <button
                 className={styles.menuItem}
                 onClick={() => {
@@ -89,9 +212,7 @@ const PriceScaleMenu = ({
                 }}
             >
                 <div className={styles.menuItemContent}>
-                    <svg className={styles.menuItemIcon} viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
-                        <line x1="2" y1="9" x2="16" y2="9" />
-                    </svg>
+                    <div className={styles.menuItemIcon}><HorizontalLineIcon /></div>
                     <span className={styles.menuItemText}>
                         Draw Horizontal Line at {formattedPrice}
                     </span>

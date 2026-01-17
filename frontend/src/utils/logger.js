@@ -6,7 +6,7 @@
 // Determine if we're in development mode
 const isDev = import.meta.env?.DEV ?? process.env.NODE_ENV !== 'production';
 
-// Log levels - exported for UI configuration
+// Log levels
 export const LOG_LEVELS = {
     DEBUG: 0,
     INFO: 1,
@@ -26,12 +26,16 @@ export const LOG_LEVEL_LABELS = {
 
 // Get initial log level from localStorage or use default
 const getInitialLogLevel = () => {
-    const saved = localStorage.getItem('aa_log_level');
-    if (saved !== null) {
-        const parsed = parseInt(saved, 10);
-        if (!isNaN(parsed) && parsed >= 0 && parsed <= 4) {
-            return parsed;
+    try {
+        const saved = localStorage.getItem('oa_log_level');
+        if (saved !== null) {
+            const parsed = parseInt(saved, 10);
+            if (!isNaN(parsed) && parsed >= 0 && parsed <= 4) {
+                return parsed;
+            }
         }
+    } catch {
+        // localStorage might not be available
     }
     // Default: DEBUG in dev, WARN in production
     return isDev ? LOG_LEVELS.DEBUG : LOG_LEVELS.WARN;
@@ -42,12 +46,15 @@ let currentLevel = getInitialLogLevel();
 
 /**
  * Set the current log level
- * @param {number} level - One of LOG_LEVELS values
  */
 export const setLogLevel = (level) => {
     if (level >= LOG_LEVELS.DEBUG && level <= LOG_LEVELS.NONE) {
         currentLevel = level;
-        localStorage.setItem('aa_log_level', level.toString());
+        try {
+            localStorage.setItem('oa_log_level', level.toString());
+        } catch {
+            // localStorage might not be available
+        }
         // Log the change at info level (will show unless NONE)
         if (level < LOG_LEVELS.NONE) {
             console.log(`[Logger] Log level set to: ${LOG_LEVEL_LABELS[level]}`);
@@ -57,7 +64,6 @@ export const setLogLevel = (level) => {
 
 /**
  * Get the current log level
- * @returns {number} Current log level
  */
 export const getLogLevel = () => currentLevel;
 

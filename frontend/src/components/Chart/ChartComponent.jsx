@@ -1,19 +1,19 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback, useMemo } from 'react';
 import {
     createChart,
-    CandlestickSeries,
-    BarSeries,
     LineSeries,
-    AreaSeries,
-    BaselineSeries,
-    HistogramSeries
+    createSeriesMarkers
 } from 'lightweight-charts';
 import styles from './ChartComponent.module.css';
 import IndicatorLegend from './IndicatorLegend';
+import PaneContextMenu from './PaneContextMenu';
+import MeasureOverlay from './MeasureOverlay';
+import OHLCHeader from './OHLCHeader';
+import ChartContextMenu from './ChartContextMenu';
 import IndicatorSettingsDialog from '../IndicatorSettings/IndicatorSettingsDialog';
 import { getIndicatorConfig } from '../IndicatorSettings/indicatorConfigs';
 import { getKlines, getHistoricalKlines, subscribeToTicker, saveDrawings, loadDrawings } from '../../services/angelalgo';
-import { combinePremiumOHLC, combineMultiLegOHLC } from '../../services/optionChain';
+import { combineMultiLegOHLC } from '../../services/optionChain';
 import { getAccurateISTTimestamp, syncTimeWithAPI, shouldResync } from '../../services/timeService';
 import {
     calculateSMA,
@@ -25,18 +25,16 @@ import {
     calculateATR,
     calculateStochastic,
     calculateVWAP,
-    calculateSupertrend,
-    calculateADX,
-    calculateIchimoku,
-    calculatePivotPoints
+    calculateSupertrend
 } from '../../utils/indicators';
 
 import { calculateTPO } from '../../utils/indicators/tpo';
 import { calculateFirstCandle } from '../../utils/indicators/firstCandle';
+import { calculateRangeBreakout } from '../../utils/indicators/rangeBreakout';
 import { calculatePriceActionRange } from '../../utils/indicators/priceActionRange';
+import { calculateANNStrategy } from '../../utils/indicators/annStrategy';
+import { calculateHilengaMilenga } from '../../utils/indicators/hilengaMilenga';
 import { TPOProfilePrimitive } from '../../plugins/tpo-profile/TPOProfilePrimitive';
-import { calculateHeikinAshi } from '../../utils/chartUtils';
-import { calculateRenko } from '../../utils/renkoUtils';
 import { intervalToSeconds } from '../../utils/timeframes';
 import { logger } from '../../utils/logger.js';
 
@@ -51,63 +49,23 @@ import { useChartResize } from '../../hooks/useChartResize';
 import { useChartDrawings } from '../../hooks/useChartDrawings';
 import { useChartAlerts } from '../../hooks/useChartAlerts';
 import { getChartTheme, getThemeType } from '../../utils/chartTheme';
-
-const TOOL_MAP = {
-    'cursor': 'None',
-    'eraser': 'Eraser',
-    'trendline': 'TrendLine',
-    'arrow': 'Arrow',
-    'ray': 'Ray',
-    'extended_line': 'ExtendedLine',
-    'horizontal': 'HorizontalLine',
-    'horizontal_ray': 'HorizontalRay',
-    'vertical': 'VerticalLine',
-    'cross_line': 'CrossLine',
-    'parallel_channel': 'ParallelChannel',
-    'fibonacci': 'FibRetracement',
-    'fib_extension': 'FibExtension',
-    'pitchfork': 'Pitchfork',
-    'brush': 'Brush',
-    'highlighter': 'Highlighter',
-    'rectangle': 'Rectangle',
-    'circle': 'Circle',
-    'arc': 'Arc',
-    'path': 'Path',
-    'text': 'Text',
-    'callout': 'Callout',
-    'price_label': 'PriceLabel',
-    'pattern': 'Pattern',
-    'triangle': 'Triangle',
-    'abcd': 'ABCD',
-    'xabcd': 'XABCD',
-    'elliott_impulse': 'ElliottImpulseWave',
-    'elliott_correction': 'ElliottCorrectionWave',
-    'head_and_shoulders': 'HeadAndShoulders',
-    'prediction': 'LongPosition',
-    'prediction_short': 'ShortPosition',
-    'date_range': 'DateRange',
-    'price_range': 'PriceRange',
-    'date_price_range': 'DatePriceRange',
-    'measure': 'Measure',
-    'zoom_in': 'None', // Zoom handled separately via click handler
-    'zoom_out': 'None', // Zoom handled separately via click handler
-    'remove': 'None'
-};
-
-// Helper to convert hex color to rgba
-const hexToRgba = (hex, alpha) => {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-};
-
-// Helper to normalize symbols for comparison (handle exchange suffixes)
-const areSymbolsEquivalent = (s1, s2) => {
-    if (!s1 || !s2) return false;
-    const normalize = (s) => s.split(':')[0].trim().toUpperCase();
-    return normalize(s1) === normalize(s2);
-};
+import { TOOL_MAP, hexToRgba, areSymbolsEquivalent, addFutureWhitespacePoints, formatTimeDiff } from './utils/chartHelpers';
+import { createSeries, transformData } from './utils/seriesFactories';
+import { createIndicatorSeries } from './utils/indicatorCreators';
+import { updateIndicatorSeries } from './utils/indicatorUpdaters';
+import {
+    DEFAULT_CANDLE_WINDOW,
+    DEFAULT_RIGHT_OFFSET,
+    PREFETCH_THRESHOLD,
+    MIN_CANDLES_FOR_SCROLL_BACK,
+    IST_OFFSET_SECONDS,
+    DEFAULT_VIEW_WINDOW,
+    EXTENDED_VIEW_WINDOW
+} from './utils/chartConfig';
+import { saveAlertsForSymbol, loadAlertsForSymbol } from '../../services/alertService';
+import { usePaneMenu } from './hooks/usePaneMenu';
+import { useOrders } from '../../context/OrderContext';
+import { useUser } from '../../context/UserContext';
 
 const ChartComponent = forwardRef(({
     data: initialData = [],
@@ -126,6 +84,7 @@ const ChartComponent = forwardRef(({
     theme = 'dark',
     comparisonSymbols = [],
     onAlertsSync,
+    onDrawingsSync,
     onAlertTriggered,
     onReplayModeChange,
     isDrawingsLocked = false,
@@ -140,14 +99,20 @@ const ChartComponent = forwardRef(({
     onOpenOptionChain, // Callback to open option chain for current symbol
     oiLines = null, // { maxCallOI, maxPutOI, maxPain } - OI levels to display as price lines
     showOILines = false, // Whether to show OI lines
-    orders = [],
-    positions = [],
-    onModifyOrder,
-    onCancelOrder
+    onOpenSettings, // Callback to open settings dialog
+    onOpenObjectTree, // Callback to open object tree panel
+    onOpenTradingPanel // Callback to open trading panel with pre-filled values (action, price, orderType)
 }, ref) => {
+    // Get authentication status
+    const { isAuthenticated } = useUser();
+
+    // Get orders and positions from OrderContext
+    const { activeOrders: orders = [], activePositions: positions = [], onModifyOrder, onCancelOrder } = useOrders();
+
     const chartContainerRef = useRef();
     const [isLoading, setIsLoading] = useState(true);
-    const [contextMenu, setContextMenu] = useState({ show: false, x: 0, y: 0 });
+    const [contextMenu, setContextMenu] = useState({ show: false, x: 0, y: 0, price: null });
+    const [isVerticalCursorLocked, setIsVerticalCursorLocked] = useState(false);
     const [priceScaleMenu, setPriceScaleMenu] = useState({ visible: false, x: 0, y: 0, price: null });
     const [indicatorSettingsOpen, setIndicatorSettingsOpen] = useState(null); // which indicator's settings are open
     const [indicatorValues, setIndicatorValues] = useState({}); // Current value under cursor for each indicator { id: value }
@@ -157,13 +122,13 @@ const ChartComponent = forwardRef(({
     useChartResize(chartContainerRef, chartInstance);
 
     const [lineToolManager, setLineToolManager] = useState(null);
-    useChartDrawings(lineToolManager, symbol, exchange, interval);
+    useChartDrawings(lineToolManager, symbol, exchange, interval, onDrawingsSync);
     useChartAlerts(lineToolManager, symbol, exchange);
 
     // Close context menu on click outside
     useEffect(() => {
         if (!contextMenu.show) return;
-        const handleClickAway = () => setContextMenu({ show: false, x: 0, y: 0 });
+        const handleClickAway = () => setContextMenu({ show: false, x: 0, y: 0, price: null });
         document.addEventListener('click', handleClickAway);
         return () => document.removeEventListener('click', handleClickAway);
     }, [contextMenu.show]);
@@ -171,6 +136,7 @@ const ChartComponent = forwardRef(({
     const isActuallyLoadingRef = useRef(true); // Track if we're actually loading data (not just updating indicators) - start as true on mount
     const chartRef = useRef(null);
     const mainSeriesRef = useRef(null);
+    const seriesMarkersRef = useRef(null); // Ref for series markers primitive (lightweight-charts v5)
 
     // Unified Indicator Maps for Multi-Instance Support
     const indicatorSeriesMap = useRef(new Map()); // Map<id, Series | Object>
@@ -179,6 +145,7 @@ const ChartComponent = forwardRef(({
     // Keeping these for now if used by specific legacy logic, but goal is to move to maps
     // Integrated indicator series refs (displayed within main chart)
     const volumeSeriesRef = useRef(null); // Volume might remain special or move to map
+    const cumulativeVolumeRef = useRef(0); // Track cumulative day volume for per-candle calculation
 
     const chartReadyRef = useRef(false); // Track when chart is fully stable and ready for indicator additions
     const lineToolManagerRef = useRef(null);
@@ -187,11 +154,33 @@ const ChartComponent = forwardRef(({
     const oiPriceLinesRef = useRef({ maxCallOI: null, maxPutOI: null, maxPain: null }); // Refs for OI price lines
     const firstCandleSeriesRef = useRef([]); // Array of line series for all days' high/low
     const priceActionRangeSeriesRef = useRef([]); // Array of line series for PAR support/resistance
+    const rangeBreakoutSeriesRef = useRef([]); // Array of line series for range breakout high/low
+    const annStrategySeriesRef = useRef(null); // ANN Strategy prediction series
+    const annStrategyPaneRef = useRef(null); // ANN Strategy pane reference
     const wsRef = useRef(null);
     const chartTypeRef = useRef(chartType);
     const dataRef = useRef([]);
     const comparisonSeriesRefs = useRef(new Map());
     const visualTradingRef = useRef(null);
+    const [error, setError] = useState(null);
+
+    // Pane context menu hook
+    const {
+        paneContextMenu,
+        maximizedPane,
+        collapsedPanes,
+        handlePaneMenu,
+        closePaneMenu,
+        handleMaximizePane,
+        handleCollapsePane,
+        handleMovePaneUp,
+        handleDeletePane,
+        canPaneMoveUp
+    } = usePaneMenu({
+        chartRef,
+        indicatorPanesMap,
+        onIndicatorRemove
+    });
 
     // Multi-leg strategy mode refs
     const strategyWsRefs = useRef({}); // Map: legId -> WebSocket
@@ -249,42 +238,7 @@ const ChartComponent = forwardRef(({
     // Track previous symbol for alert persistence
     const prevSymbolRef = useRef({ symbol: null, exchange: null });
 
-    // === Alert Persistence Helpers ===
-    // Use separate key from App.jsx which uses 'tv_alerts' with different format
-    const CHART_ALERTS_STORAGE_KEY = 'tv_chart_alerts';
-
-    /**
-     * Save alerts for a symbol to localStorage
-     */
-    const saveAlertsForSymbol = useCallback((sym, exch, alerts) => {
-        if (!sym || !alerts) return;
-        try {
-            const key = `${sym}:${exch || 'NSE'}`;
-            const stored = JSON.parse(localStorage.getItem(CHART_ALERTS_STORAGE_KEY) || '{}');
-            stored[key] = alerts;
-            localStorage.setItem(CHART_ALERTS_STORAGE_KEY, JSON.stringify(stored));
-            console.log('[Alerts] Saved', alerts.length, 'alerts for', key, alerts);
-        } catch (err) {
-            console.warn('[Alerts] Failed to save alerts:', err);
-        }
-    }, []);
-
-    /**
-     * Load alerts for a symbol from localStorage
-     */
-    const loadAlertsForSymbol = useCallback((sym, exch) => {
-        if (!sym) return [];
-        try {
-            const key = `${sym}:${exch || 'NSE'}`;
-            const stored = JSON.parse(localStorage.getItem(CHART_ALERTS_STORAGE_KEY) || '{}');
-            const alerts = stored[key] || [];
-            console.log('[Alerts] Loaded', alerts.length, 'alerts for', key, alerts);
-            return alerts;
-        } catch (err) {
-            console.warn('[Alerts] Failed to load alerts:', err);
-            return [];
-        }
-    }, []);
+    // Alert persistence now handled by alertService (imported above)
 
     // Sync interval changes with LineToolManager for drawing visibility filtering
     useEffect(() => {
@@ -295,36 +249,6 @@ const ChartComponent = forwardRef(({
             }
         }
     }, [interval]);
-
-    // ============================================
-    // CONFIGURABLE CHART CONSTANTS
-    // ============================================
-    const DEFAULT_CANDLE_WINDOW = 235;        // Fixed number of candles to show
-    const DEFAULT_RIGHT_OFFSET = 50;           // Right margin in candle units (~50 for TradingView-like future time display)
-    const PREFETCH_THRESHOLD = 126;            // Candles from oldest before prefetching
-    const MIN_CANDLES_FOR_SCROLL_BACK = 50;   // Minimum candles before enabling scroll-back
-    const FUTURE_TIME_CANDLES = 120;           // Number of future candles to display time labels for
-
-    // Helper: Generate whitespace points for future time display
-    // Whitespace points are data objects with only 'time' property (no price data)
-    // This allows lightweight-charts to render future time labels on the axis
-    const addFutureWhitespacePoints = useCallback((data, intervalSeconds) => {
-        if (!data || data.length === 0 || !Number.isFinite(intervalSeconds) || intervalSeconds <= 0) {
-            return data;
-        }
-
-        const lastCandle = data[data.length - 1];
-        const lastTime = lastCandle.time;
-        const whitespacePoints = [];
-
-        for (let i = 1; i <= FUTURE_TIME_CANDLES; i++) {
-            whitespacePoints.push({
-                time: lastTime + (i * intervalSeconds)
-            });
-        }
-
-        return [...data, ...whitespacePoints];
-    }, []);
 
     // Loading state for scroll-back (shows subtle indicator)
     const [isLoadingOlderData, setIsLoadingOlderData] = useState(false);
@@ -579,6 +503,31 @@ const ChartComponent = forwardRef(({
             const userAlerts = manager && manager._userPriceAlerts;
             if (userAlerts && typeof userAlerts.openEditDialog === 'function') {
                 userAlerts.openEditDialog('new', { price: Number(price), condition: 'crossing' });
+            }
+        },
+        toggleDrawingVisibility: (index) => {
+            if (lineToolManagerRef.current && typeof lineToolManagerRef.current.toggleToolVisibilityByIndex === 'function') {
+                lineToolManagerRef.current.toggleToolVisibilityByIndex(index);
+            }
+        },
+        toggleDrawingLock: (index) => {
+            if (lineToolManagerRef.current && typeof lineToolManagerRef.current.toggleToolLockByIndex === 'function') {
+                lineToolManagerRef.current.toggleToolLockByIndex(index);
+            }
+        },
+        removeDrawingByIndex: (index) => {
+            if (lineToolManagerRef.current && typeof lineToolManagerRef.current.removeToolByIndex === 'function') {
+                lineToolManagerRef.current.removeToolByIndex(index);
+            }
+        },
+        enableSessionHighlighting: () => {
+            if (lineToolManagerRef.current && typeof lineToolManagerRef.current.enableSessionHighlighting === 'function') {
+                lineToolManagerRef.current.enableSessionHighlighting();
+            }
+        },
+        disableSessionHighlighting: () => {
+            if (lineToolManagerRef.current && typeof lineToolManagerRef.current.disableSessionHighlighting === 'function') {
+                lineToolManagerRef.current.disableSessionHighlighting();
             }
         }
     }));
@@ -1006,18 +955,6 @@ const ChartComponent = forwardRef(({
     useEffect(() => {
         if (!chartRef.current || !mainSeriesRef.current) return;
 
-        const formatTimeDiff = (ms) => {
-            const seconds = Math.floor(ms / 1000);
-            const minutes = Math.floor(seconds / 60);
-            const hours = Math.floor(minutes / 60);
-            const days = Math.floor(hours / 24);
-
-            if (days > 0) return `${days}d ${hours % 24}h`;
-            if (hours > 0) return `${hours}h ${minutes % 60}m`;
-            if (minutes > 0) return `${minutes}m`;
-            return `${seconds}s`;
-        };
-
         const handleChartClick = (param) => {
             if (!isShiftPressedRef.current) return;
             if (!param.point || !param.time) return;
@@ -1236,119 +1173,6 @@ const ChartComponent = forwardRef(({
         };
     }, [updateAxisLabel]);
 
-
-
-    // Helper to transform OHLC data based on chart type
-    const transformData = (data, type) => {
-        if (!data || data.length === 0) return [];
-
-        switch (type) {
-            case 'line':
-            case 'area':
-            case 'baseline':
-                return data.map(d => ({ time: d.time, value: d.close }));
-            case 'heikin-ashi':
-                return calculateHeikinAshi(data);
-            case 'renko':
-                return calculateRenko(data);
-            default:
-                return data;
-        }
-    };
-
-    // Create appropriate series based on chart type
-    const createSeries = (chart, type, title = '') => {
-        // Remove title from options to prevent it from showing on the price axis label
-        const commonOptions = { lastValueVisible: true, priceScaleId: 'right', title: '' };
-
-        // Use appearance colors or defaults
-        const upColor = chartAppearance.candleUpColor || '#089981';
-        const downColor = chartAppearance.candleDownColor || '#F23645';
-        const wickUpColor = chartAppearance.wickUpColor || upColor;
-        const wickDownColor = chartAppearance.wickDownColor || downColor;
-
-        switch (type) {
-            case 'candlestick':
-                return chart.addSeries(CandlestickSeries, {
-                    ...commonOptions,
-                    upColor,
-                    downColor,
-                    borderVisible: false,
-                    wickUpColor,
-                    wickDownColor,
-                });
-            case 'bar':
-                return chart.addSeries(BarSeries, {
-                    ...commonOptions,
-                    upColor,
-                    downColor,
-                    thinBars: false,
-                });
-            case 'hollow-candlestick':
-                return chart.addSeries(CandlestickSeries, {
-                    ...commonOptions,
-                    upColor: 'transparent',
-                    downColor,
-                    borderUpColor: upColor,
-                    borderDownColor: downColor,
-                    wickUpColor,
-                    wickDownColor,
-                });
-            case 'line':
-                return chart.addSeries(LineSeries, {
-                    ...commonOptions,
-                    color: '#2962FF',
-                    lineWidth: 2,
-                });
-            case 'area':
-                return chart.addSeries(AreaSeries, {
-                    ...commonOptions,
-                    topColor: 'rgba(41, 98, 255, 0.4)',
-                    bottomColor: 'rgba(41, 98, 255, 0.0)',
-                    lineColor: '#2962FF',
-                    lineWidth: 2,
-                });
-            case 'baseline':
-                return chart.addSeries(BaselineSeries, {
-                    ...commonOptions,
-                    topLineColor: upColor,
-                    topFillColor1: hexToRgba(upColor, 0.28),
-                    topFillColor2: hexToRgba(upColor, 0.05),
-                    bottomLineColor: downColor,
-                    bottomFillColor1: hexToRgba(downColor, 0.05),
-                    bottomFillColor2: hexToRgba(downColor, 0.28),
-                });
-            case 'heikin-ashi':
-                return chart.addSeries(CandlestickSeries, {
-                    ...commonOptions,
-                    upColor,
-                    downColor,
-                    borderVisible: false,
-                    wickUpColor,
-                    wickDownColor,
-                });
-            case 'renko':
-                // Renko bricks don't have wicks, so we hide them by matching body colors
-                return chart.addSeries(CandlestickSeries, {
-                    ...commonOptions,
-                    upColor,
-                    downColor,
-                    borderVisible: false,
-                    wickUpColor: upColor,
-                    wickDownColor: downColor,
-                });
-            default:
-                return chart.addSeries(CandlestickSeries, {
-                    ...commonOptions,
-                    upColor,
-                    downColor,
-                    borderVisible: false,
-                    wickUpColor,
-                    wickDownColor,
-                });
-        }
-    };
-
     // Keep track of active tool for the wrapper
     const activeToolRef = useRef(activeTool);
     useEffect(() => {
@@ -1487,31 +1311,20 @@ const ChartComponent = forwardRef(({
         }
     };
 
-    const updateVisualTradingData = useCallback(() => {
-        if (!visualTradingRef.current) return;
+    const initializeVisualTrading = (series) => {
+        if (!series) return;
 
+        // Filter orders and positions for current symbol
         const relevantOrders = orders.filter(o => areSymbolsEquivalent(o.symbol, symbol));
         const relevantPositions = positions.filter(p => areSymbolsEquivalent(p.symbol, symbol));
 
-        // Debug logging for missing orders
-        if (orders.length > 0 && relevantOrders.length === 0) {
-            console.warn('[VisualTrading] Orders exist but none matched symbol:', symbol,
-                'Available symbols:', orders.map(o => o.symbol));
-        }
-
-        visualTradingRef.current.setData(relevantOrders, relevantPositions);
-    }, [orders, positions, symbol]);
-
-    const initializeVisualTrading = (series) => {
-        if (!series) return;
         visualTradingRef.current = new VisualTrading({
-            orders: [],
-            positions: [],
+            orders: relevantOrders,
+            positions: relevantPositions,
             onModifyOrder: onModifyOrder,
             onCancelOrder: onCancelOrder
         });
         series.attachPrimitive(visualTradingRef.current);
-        updateVisualTradingData();
     };
 
     // Initialize chart once on mount
@@ -1616,7 +1429,6 @@ const ChartComponent = forwardRef(({
                 // Calculate date range for older data
                 // Go back further based on interval type
                 const oldestTime = oldestLoadedTimeRef.current;
-                const IST_OFFSET_SECONDS = 19800; // Same offset used in angelalgo.js
                 const oldestDate = new Date((oldestTime - IST_OFFSET_SECONDS) * 1000);
 
                 // End date is 1 day before oldest loaded (to avoid overlap)
@@ -1838,8 +1650,20 @@ const ChartComponent = forwardRef(({
             // check for hovered order
             const hoveredOrderId = visualTradingRef.current ? visualTradingRef.current.getHoveredOrderId() : null;
 
+            // Calculate price at click point
+            let clickPrice = null;
+            if (mainSeriesRef.current && chartContainerRef.current) {
+                const rect = chartContainerRef.current.getBoundingClientRect();
+                const relativeY = event.clientY - rect.top;
+                try {
+                    clickPrice = mainSeriesRef.current.coordinateToPrice(relativeY);
+                } catch (e) {
+                    console.warn('Failed to convert coordinate to price', e);
+                }
+            }
+
             // Show custom context menu
-            setContextMenu({ show: true, x: event.clientX, y: event.clientY, orderId: hoveredOrderId });
+            setContextMenu({ show: true, x: event.clientX, y: event.clientY, orderId: hoveredOrderId, price: clickPrice });
         };
         const container = chartContainerRef.current;
         container.addEventListener('contextmenu', handleContextMenu, true);
@@ -1900,8 +1724,9 @@ const ChartComponent = forwardRef(({
 
         const chart = chartRef.current;
 
-        const replacementSeries = createSeries(chart, chartType, strategyConfig?.displayName || symbol);
+        const replacementSeries = createSeries(chart, chartType, chartAppearance);
         mainSeriesRef.current = replacementSeries;
+        seriesMarkersRef.current = null; // Reset markers primitive for new series
         initializeLineTools(replacementSeries);
         initializeVisualTrading(replacementSeries);
 
@@ -2001,6 +1826,7 @@ const ChartComponent = forwardRef(({
                     }
                 }
                 mainSeriesRef.current = null;
+                seriesMarkersRef.current = null; // Clear markers primitive
             }
 
             // Cleanup PriceScaleTimer
@@ -2079,6 +1905,7 @@ const ChartComponent = forwardRef(({
                 if (cancelled) return;
 
                 if (Array.isArray(data) && data.length > 0 && mainSeriesRef.current) {
+                    setError(null); // Clear any previous errors
                     dataRef.current = data;
 
                     // Track the oldest loaded timestamp for scroll-back loading
@@ -2173,6 +2000,7 @@ const ChartComponent = forwardRef(({
                                     high: combinedClose,
                                     low: combinedClose,
                                     close: combinedClose,
+                                    volume: 0,
                                 };
                                 currentData.push(candle);
                             } else {
@@ -2183,6 +2011,7 @@ const ChartComponent = forwardRef(({
                                     high: Math.max(existingCandle.high, combinedClose),
                                     low: Math.min(existingCandle.low, combinedClose),
                                     close: combinedClose,
+                                    volume: existingCandle.volume || 0,
                                 };
                                 currentData[lastIndex] = candle;
                             }
@@ -2216,8 +2045,9 @@ const ChartComponent = forwardRef(({
                         wsRef.current = subscribeToTicker(symbol, exchange, interval, (ticker) => {
                             if (cancelled || !ticker) return;
 
-                            // Only need close price - that's the real-time tick data
+                            // Extract price and volume from real-time tick data
                             const closePrice = Number(ticker.close);
+                            const tickVolume = Number(ticker.volume) || 0;
                             if (!Number.isFinite(closePrice) || closePrice <= 0) {
                                 console.warn('Received invalid close price:', ticker);
                                 return;
@@ -2246,25 +2076,45 @@ const ChartComponent = forwardRef(({
                             let candle;
                             if (needNewCandle) {
                                 // Create a new candle - all OHLC start at current price
+                                // Calculate per-candle volume from cumulative day volume
+                                const perCandleVolume = cumulativeVolumeRef.current === 0
+                                    ? tickVolume  // First tick: use as-is
+                                    : Math.max(0, tickVolume - cumulativeVolumeRef.current);  // Subsequent: calculate difference
+
+                                // Update baseline for next candle
+                                cumulativeVolumeRef.current = tickVolume;
+
                                 candle = {
                                     time: currentCandleTime,
                                     open: closePrice,
                                     high: closePrice,
                                     low: closePrice,
                                     close: closePrice,
+                                    volume: perCandleVolume,
                                 };
                                 currentData.push(candle);
-                                logger.debug('[WebSocket] Created new candle at time:', currentCandleTime, 'price:', closePrice);
+                                logger.debug('[WebSocket] Created new candle at time:', currentCandleTime, 'price:', closePrice, 'volume:', perCandleVolume, '(cumulative:', tickVolume + ')');
                             } else {
                                 // Update the last candle using ONLY the close price for high/low
                                 // WebSocket high/low are session-wide, not per-interval
                                 const existingCandle = currentData[lastIndex];
+
+                                // Initialize baseline on first tick for this candle
+                                if (cumulativeVolumeRef.current === 0) {
+                                    // Estimate baseline: current cumulative - existing candle volume
+                                    cumulativeVolumeRef.current = Math.max(0, tickVolume - (existingCandle.volume || 0));
+                                }
+
+                                // Calculate per-candle volume
+                                const perCandleVolume = Math.max(0, tickVolume - cumulativeVolumeRef.current);
+
                                 candle = {
                                     time: lastCandleTime,
                                     open: existingCandle.open,
                                     high: Math.max(existingCandle.high, closePrice),
                                     low: Math.min(existingCandle.low, closePrice),
                                     close: closePrice,
+                                    volume: perCandleVolume,
                                 };
                                 currentData[lastIndex] = candle;
                             }
@@ -2312,6 +2162,20 @@ const ChartComponent = forwardRef(({
                     return;
                 }
                 console.error('Error loading chart data:', error);
+
+                // Set user-friendly error message
+                let errorMessage = 'Failed to load chart data';
+                if (error.message && error.message.includes('Symbol')) {
+                    errorMessage = error.message;
+                } else if (error.status === 400 || error.status === 404) {
+                    errorMessage = `Symbol '${symbol}' not found`;
+                }
+
+                // If the error object has a JSON body with a message (from chartDataService logs), use it
+                // Note: The fetch service might reject with an Error object that has the text
+
+                setError(errorMessage);
+
                 if (!cancelled) {
                     isActuallyLoadingRef.current = false;
                     setIsLoading(false);
@@ -2319,8 +2183,15 @@ const ChartComponent = forwardRef(({
             }
         };
 
-        emaLastValueRef.current = null;
-        loadData();
+        // Only load data if authenticated
+        if (isAuthenticated === true) {
+            emaLastValueRef.current = null;
+            loadData();
+        } else {
+            // Not authenticated - set loading false and show empty chart
+            setIsLoading(false);
+            isActuallyLoadingRef.current = false;
+        }
 
         return () => {
             cancelled = true;
@@ -2342,7 +2213,7 @@ const ChartComponent = forwardRef(({
             strategyDataRef.current = {};
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [symbol, exchange, interval, strategyConfig]);
+    }, [symbol, exchange, interval, strategyConfig, isAuthenticated]);
 
     const emaLastValueRef = useRef(null);
 
@@ -2440,8 +2311,15 @@ const ChartComponent = forwardRef(({
                         break;
                     }
                     case 'volume': {
-                        const val = calculateVolume(data, ind.colorUp, ind.colorDown);
-                        if (val && val.length > 0) series.setData(val);
+                        // TradingView-style volume (close vs previous close)
+                        const volumeData = calculateVolume(
+                            data,
+                            ind.colorUp || '#26A69A',
+                            ind.colorDown || '#EF5350'
+                        );
+                        if (volumeData && volumeData.length > 0 && series.bars) {
+                            series.bars.setData(volumeData);
+                        }
                         break;
                     }
                     case 'vwap': {
@@ -2456,7 +2334,7 @@ const ChartComponent = forwardRef(({
                         if (colored && colored.length > 0) series.setData(colored);
                         break;
                     }
-                    // TPO, FirstCandle, PAR?
+                    // TPO, PAR?
                     // They usually don't tick update in the same simple way or are handled by updateIndicators re-run.
                     // But strictly speaking they should update.
                     // TPO is a primitive attached to main series usually.
@@ -2465,6 +2343,66 @@ const ChartComponent = forwardRef(({
                         // TPO is likely ref-based to a single primitive or map based.
                         // But TPO calculation is heavy. Maybe skip on tick?
                         // For now skip TPO on every tick or handle if efficient.
+                        break;
+                    }
+                    case 'annStrategy': {
+                        // ANN Strategy real-time update
+                        const result = calculateANNStrategy(data, {
+                            threshold: ind.threshold || 0.0014,
+                            longColor: ind.longColor || '#26A69A',
+                            shortColor: ind.shortColor || '#EF5350',
+                            showSignals: ind.showSignals !== false,
+                            showBackground: ind.showBackground !== false
+                        });
+
+                        if (result.predictions && result.predictions.length > 0 && series.prediction) {
+                            series.prediction.setData(result.predictions);
+                        }
+
+                        // Update background area series on main chart
+                        if ((series.bgLong || series.bgShort) && result.signals && result.signals.length > 0 && ind.showBackground !== false) {
+                            const priceMax = Math.max(...data.map(d => d.high));
+                            const priceMin = Math.min(...data.map(d => d.low));
+                            const padding = (priceMax - priceMin) * 0.1;
+                            const bgTop = priceMax + padding;
+                            const bgBottom = priceMin - padding;
+
+                            const longBgData = result.signals.map(sig => ({
+                                time: sig.time,
+                                value: sig.buying === true ? bgTop : bgBottom
+                            }));
+                            const shortBgData = result.signals.map(sig => ({
+                                time: sig.time,
+                                value: sig.buying === false ? bgTop : bgBottom
+                            }));
+
+                            if (series.bgLong) series.bgLong.setData(longBgData);
+                            if (series.bgShort) series.bgShort.setData(shortBgData);
+                        }
+
+                        // Note: Markers are handled collectively in updateIndicators to avoid overwriting
+                        // other indicators' markers. Real-time updates only refresh prediction and background.
+                        break;
+                    }
+                    case 'hilengaMilenga': {
+                        // Hilenga-Milenga real-time update
+                        const hmResult = calculateHilengaMilenga(
+                            data,
+                            ind.rsiLength || 9,
+                            ind.emaLength || 3,
+                            ind.wmaLength || 21
+                        );
+
+                        if (hmResult.rsiLine && hmResult.rsiLine.length > 0) {
+                            if (series.rsi) series.rsi.setData(hmResult.rsiLine);
+                            if (series.baseline) series.baseline.setData(hmResult.rsiLine);
+                        }
+                        if (hmResult.emaLine && hmResult.emaLine.length > 0 && series.ema) {
+                            series.ema.setData(hmResult.emaLine);
+                        }
+                        if (hmResult.wmaLine && hmResult.wmaLine.length > 0 && series.wma) {
+                            series.wma.setData(hmResult.wmaLine);
+                        }
                         break;
                     }
                 }
@@ -2476,6 +2414,9 @@ const ChartComponent = forwardRef(({
 
         const canAddSeries = chartReadyRef.current;
         const validIds = new Set();
+
+        // Collect all markers from all indicators to set them together at the end
+        const allMarkers = [];
 
         if (Array.isArray(indicatorsArray)) {
             indicatorsArray.forEach(ind => {
@@ -2491,202 +2432,18 @@ const ChartComponent = forwardRef(({
                 // --- CREATION LOGIC ---
                 if (!series && canAddSeries) {
                     try {
-                        switch (type) {
-                            case 'sma':
-                            case 'ema':
-                            case 'vwap':
-                            case 'atr': // ATR overlay? No, ATR is usually separate pane. Check config.
-                                // If ATR is overlay, use addSeries. If pane, user addPane.
-                                // Previous code put ATR in a Pane.
-                                if (type === 'atr') {
-                                    pane = chartRef.current.addPane({ height: 100 });
-                                    series = pane.addSeries(LineSeries, { lineWidth: 2, priceLineVisible: false, lastValueVisible: true });
-                                    indicatorPanesMap.current.set(id, pane);
-                                } else {
-                                    // SMA, EMA, VWAP are overlays
-                                    series = chartRef.current.addSeries(LineSeries, { lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+                        const result = createIndicatorSeries(chartRef.current, ind, isVisible);
+                        if (result) {
+                            series = result.series;
+                            if (result.pane) {
+                                pane = result.pane;
+                                indicatorPanesMap.current.set(id, pane);
+                                // Special case for ANN Strategy pane ref
+                                if (type === 'annStrategy') {
+                                    annStrategyPaneRef.current = pane;
                                 }
-                                break;
-                            case 'rsi':
-                                pane = chartRef.current.addPane({ height: 100 });
-                                series = pane.addSeries(LineSeries, { lineWidth: 2, priceLineVisible: false, lastValueVisible: true });
-                                // Add OB/OS lines for RSI
-                                series._obLine = series.createPriceLine({ price: ind.overbought || 70, color: ind.overboughtColor || '#F23645', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' });
-                                series._osLine = series.createPriceLine({ price: ind.oversold || 30, color: ind.oversoldColor || '#089981', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' });
-                                indicatorPanesMap.current.set(id, pane);
-                                break;
-                            case 'stochastic':
-                                pane = chartRef.current.addPane({ height: 100 });
-                                series = {
-                                    k: pane.addSeries(LineSeries, { lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: '%K' }),
-                                    d: pane.addSeries(LineSeries, { lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: '%D' })
-                                };
-                                indicatorPanesMap.current.set(id, pane);
-                                break;
-                            case 'macd':
-                                pane = chartRef.current.addPane({ height: 120 });
-                                series = {
-                                    histogram: pane.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false }),
-                                    macd: pane.addSeries(LineSeries, { lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'MACD' }),
-                                    signal: pane.addSeries(LineSeries, { lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'Signal' })
-                                };
-                                indicatorPanesMap.current.set(id, pane);
-                                break;
-                            case 'bollingerBands':
-                                series = {
-                                    upper: chartRef.current.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
-                                    middle: chartRef.current.addSeries(LineSeries, { lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false }),
-                                    lower: chartRef.current.addSeries(LineSeries, { lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
-                                };
-                                break;
-                            case 'supertrend':
-                                series = chartRef.current.addSeries(LineSeries, { lineWidth: 2, priceLineVisible: false, lastValueVisible: isVisible, crosshairMarkerVisible: true });
-                                break;
-                            case 'volume':
-                                // Volume usually at bottom overlay
-                                series = chartRef.current.addSeries(HistogramSeries, {
-                                    priceFormat: { type: 'volume' },
-                                    priceScaleId: 'volume', // Shared scale for all volumes? Or unique? 'volume' ID shares scale.
-                                    priceLineVisible: false,
-                                    lastValueVisible: false
-                                });
-                                series.priceScale().applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
-                                break;
-                            case 'adx':
-                                // ADX in separate pane with 3 lines
-                                pane = chartRef.current.addPane({ height: 100 });
-                                series = {
-                                    adx: pane.addSeries(LineSeries, {
-                                        color: ind.adxColor || '#FF9800',
-                                        lineWidth: ind.lineWidth || 2,
-                                        priceLineVisible: false,
-                                        lastValueVisible: true,
-                                        title: 'ADX'
-                                    }),
-                                    plusDI: pane.addSeries(LineSeries, {
-                                        color: ind.plusDIColor || '#26A69A',
-                                        lineWidth: 1,
-                                        priceLineVisible: false,
-                                        lastValueVisible: false,
-                                        title: '+DI'
-                                    }),
-                                    minusDI: pane.addSeries(LineSeries, {
-                                        color: ind.minusDIColor || '#EF5350',
-                                        lineWidth: 1,
-                                        priceLineVisible: false,
-                                        lastValueVisible: false,
-                                        title: '-DI'
-                                    })
-                                };
-                                // Add reference lines at 20 and 25
-                                series.adx._line20 = series.adx.createPriceLine({ price: 20, color: '#555', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' });
-                                series.adx._line25 = series.adx.createPriceLine({ price: 25, color: '#777', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' });
-                                indicatorPanesMap.current.set(id, pane);
-                                break;
-                            case 'ichimoku':
-                                // Ichimoku Cloud - 5 lines overlaid on main chart
-                                series = {
-                                    tenkan: chartRef.current.addSeries(LineSeries, {
-                                        color: ind.tenkanColor || '#2962FF',
-                                        lineWidth: 1,
-                                        priceLineVisible: false,
-                                        lastValueVisible: false,
-                                        title: 'Tenkan'
-                                    }),
-                                    kijun: chartRef.current.addSeries(LineSeries, {
-                                        color: ind.kijunColor || '#EF5350',
-                                        lineWidth: 1,
-                                        priceLineVisible: false,
-                                        lastValueVisible: false,
-                                        title: 'Kijun'
-                                    }),
-                                    senkouA: chartRef.current.addSeries(LineSeries, {
-                                        color: ind.senkouAColor || '#26A69A',
-                                        lineWidth: 1,
-                                        priceLineVisible: false,
-                                        lastValueVisible: false,
-                                        title: 'Senkou A'
-                                    }),
-                                    senkouB: chartRef.current.addSeries(LineSeries, {
-                                        color: ind.senkouBColor || '#EF5350',
-                                        lineWidth: 1,
-                                        priceLineVisible: false,
-                                        lastValueVisible: false,
-                                        title: 'Senkou B'
-                                    }),
-                                    chikou: chartRef.current.addSeries(LineSeries, {
-                                        color: ind.chikouColor || '#9C27B0',
-                                        lineWidth: 1,
-                                        priceLineVisible: false,
-                                        lastValueVisible: false,
-                                        title: 'Chikou'
-                                    })
-                                };
-                                break;
-                            case 'pivotPoints':
-                                // Pivot Points - 7 lines overlaid on main chart
-                                series = {
-                                    pivot: chartRef.current.addSeries(LineSeries, {
-                                        color: ind.pivotColor || '#FF9800',
-                                        lineWidth: ind.lineWidth || 1,
-                                        lineStyle: 2,
-                                        priceLineVisible: false,
-                                        lastValueVisible: false,
-                                        title: 'PP'
-                                    }),
-                                    r1: chartRef.current.addSeries(LineSeries, {
-                                        color: ind.resistanceColor || '#EF5350',
-                                        lineWidth: ind.lineWidth || 1,
-                                        lineStyle: 2,
-                                        priceLineVisible: false,
-                                        lastValueVisible: false,
-                                        title: 'R1'
-                                    }),
-                                    r2: chartRef.current.addSeries(LineSeries, {
-                                        color: ind.resistanceColor || '#EF5350',
-                                        lineWidth: ind.lineWidth || 1,
-                                        lineStyle: 2,
-                                        priceLineVisible: false,
-                                        lastValueVisible: false,
-                                        title: 'R2'
-                                    }),
-                                    r3: chartRef.current.addSeries(LineSeries, {
-                                        color: ind.resistanceColor || '#EF5350',
-                                        lineWidth: ind.lineWidth || 1,
-                                        lineStyle: 2,
-                                        priceLineVisible: false,
-                                        lastValueVisible: false,
-                                        title: 'R3'
-                                    }),
-                                    s1: chartRef.current.addSeries(LineSeries, {
-                                        color: ind.supportColor || '#26A69A',
-                                        lineWidth: ind.lineWidth || 1,
-                                        lineStyle: 2,
-                                        priceLineVisible: false,
-                                        lastValueVisible: false,
-                                        title: 'S1'
-                                    }),
-                                    s2: chartRef.current.addSeries(LineSeries, {
-                                        color: ind.supportColor || '#26A69A',
-                                        lineWidth: ind.lineWidth || 1,
-                                        lineStyle: 2,
-                                        priceLineVisible: false,
-                                        lastValueVisible: false,
-                                        title: 'S2'
-                                    }),
-                                    s3: chartRef.current.addSeries(LineSeries, {
-                                        color: ind.supportColor || '#26A69A',
-                                        lineWidth: ind.lineWidth || 1,
-                                        lineStyle: 2,
-                                        priceLineVisible: false,
-                                        lastValueVisible: false,
-                                        title: 'S3'
-                                    })
-                                };
-                                break;
-                            // Add other types as needed
+                            }
                         }
-
 
                         if (series) {
                             indicatorSeriesMap.current.set(id, series);
@@ -2698,141 +2455,229 @@ const ChartComponent = forwardRef(({
 
                 // --- UPDATE LOGIC ---
                 if (series) {
-                    // Generic visibility update
-                    const setVisible = (s, v) => s && s.applyOptions({ visible: v });
-
-                    if (type === 'sma' || type === 'ema' || type === 'vwap') {
-                        series.applyOptions({
-                            visible: isVisible,
-                            color: ind.color || (type === 'sma' ? '#2196F3' : '#FF9800'),
-                            title: `${type.toUpperCase()} ${ind.period || 20}`
-                        });
-                        // Data update is handled by updateRealtimeIndicators mostly, but on load/change we must calc
-                        // Calculate Full Data if needed (e.g. init or period change)
-                        // For efficiency we might check if period changed? 
-                        // For now, re-calculate is safer to ensure correct data on settings change.
-                        let val = null;
-                        if (type === 'sma') val = calculateSMA(data, ind.period || 20);
-                        else if (type === 'ema') val = calculateEMA(data, ind.period || 20);
-                        else if (type === 'vwap') val = calculateVWAP(data, { ...ind });
-
-                        if (val && val.length > 0) series.setData(val);
-
-                    } else if (type === 'rsi') {
-                        series.applyOptions({ visible: isVisible, color: ind.color || '#7B1FA2' });
-                        if (series._obLine) series._obLine.applyOptions({ price: ind.overbought || 70, color: ind.overboughtColor || '#F23645' });
-                        if (series._osLine) series._osLine.applyOptions({ price: ind.oversold || 30, color: ind.oversoldColor || '#089981' });
-                        const val = calculateRSI(data, ind.period || 14);
-                        if (val) series.setData(val);
-
-                    } else if (type === 'macd') {
-                        if (series.macd) series.macd.applyOptions({ visible: isVisible, color: ind.macdColor || '#2962FF' });
-                        if (series.signal) series.signal.applyOptions({ visible: isVisible, color: ind.signalColor || '#FF6D00' });
-                        if (series.histogram) series.histogram.applyOptions({ visible: isVisible }); // colors set in data
-
-                        const val = calculateMACD(data, ind.fast || 12, ind.slow || 26, ind.signal || 9);
-                        if (val) {
-                            if (val.macd) series.macd.setData(val.macd);
-                            if (val.signal) series.signal.setData(val.signal);
-                            if (val.histogram) {
-                                const colored = val.histogram.map(d => ({ ...d, color: d.value >= 0 ? (ind.histUpColor || '#26A69A') : (ind.histDownColor || '#EF5350') }));
-                                series.histogram.setData(colored);
-                            }
-                        }
-                    } else if (type === 'bollingerBands') {
-                        series.upper.applyOptions({ visible: isVisible, color: ind.upperColor || '#2962FF' });
-                        series.middle.applyOptions({ visible: isVisible, color: ind.basisColor || '#FF6D00' });
-                        series.lower.applyOptions({ visible: isVisible, color: ind.lowerColor || '#2962FF' });
-                        const val = calculateBollingerBands(data, ind.period || 20, ind.stdDev || 2);
-                        if (val) {
-                            series.upper.setData(val.upper);
-                            series.middle.setData(val.middle);
-                            series.lower.setData(val.lower);
-                        }
-                    } else if (type === 'stochastic') {
-                        series.k.applyOptions({ visible: isVisible, color: ind.kColor || '#2962FF' });
-                        series.d.applyOptions({ visible: isVisible, color: ind.dColor || '#FF6D00' });
-                        const val = calculateStochastic(data, ind.kPeriod || 14, ind.dPeriod || 3, ind.smooth || 3);
-                        if (val) {
-                            series.k.setData(val.kLine);
-                            series.d.setData(val.dLine);
-                        }
-                    } else if (type === 'atr') {
-                        if (series.applyOptions) series.applyOptions({ visible: isVisible, color: ind.color || '#FF9800' });
-                        const val = calculateATR(data, ind.period || 14);
-                        if (val) series.setData(val);
-                    } else if (type === 'supertrend') {
-                        series.applyOptions({ visible: isVisible });
-                        const val = calculateSupertrend(data, ind.period || 10, ind.multiplier || 3);
-                        if (val) {
-                            const colored = val.map(d => ({ ...d, color: d.trend === 1 ? (ind.upColor || '#089981') : (ind.downColor || '#F23645') }));
-                            series.setData(colored);
-                        }
-                    } else if (type === 'volume') {
-                        series.applyOptions({ visible: isVisible });
-                        const val = calculateVolume(data, ind.colorUp || '#26A69A', ind.colorDown || '#EF5350');
-                        if (val) series.setData(val);
-                    } else if (type === 'adx') {
-                        // Update ADX, +DI, -DI lines
-                        if (series.adx) series.adx.applyOptions({ visible: isVisible, color: ind.adxColor || '#FF9800', lineWidth: ind.lineWidth || 2 });
-                        if (series.plusDI) series.plusDI.applyOptions({ visible: isVisible, color: ind.plusDIColor || '#26A69A' });
-                        if (series.minusDI) series.minusDI.applyOptions({ visible: isVisible, color: ind.minusDIColor || '#EF5350' });
-
-                        const val = calculateADX(data, ind.period || 14);
-                        if (val) {
-                            if (val.adx && series.adx) series.adx.setData(val.adx);
-                            if (val.plusDI && series.plusDI) series.plusDI.setData(val.plusDI);
-                            if (val.minusDI && series.minusDI) series.minusDI.setData(val.minusDI);
-                        }
-                    } else if (type === 'ichimoku') {
-                        // Update all 5 Ichimoku lines
-                        if (series.tenkan) series.tenkan.applyOptions({ visible: isVisible, color: ind.tenkanColor || '#2962FF' });
-                        if (series.kijun) series.kijun.applyOptions({ visible: isVisible, color: ind.kijunColor || '#EF5350' });
-                        if (series.senkouA) series.senkouA.applyOptions({ visible: isVisible, color: ind.senkouAColor || '#26A69A' });
-                        if (series.senkouB) series.senkouB.applyOptions({ visible: isVisible, color: ind.senkouBColor || '#EF5350' });
-                        if (series.chikou) series.chikou.applyOptions({ visible: isVisible, color: ind.chikouColor || '#9C27B0' });
-
-                        const val = calculateIchimoku(
-                            data,
-                            ind.tenkanPeriod || 9,
-                            ind.kijunPeriod || 26,
-                            ind.senkouBPeriod || 52,
-                            ind.displacement || 26
-                        );
-                        if (val) {
-                            if (val.tenkan && series.tenkan) series.tenkan.setData(val.tenkan);
-                            if (val.kijun && series.kijun) series.kijun.setData(val.kijun);
-                            if (val.senkouA && series.senkouA) series.senkouA.setData(val.senkouA);
-                            if (val.senkouB && series.senkouB) series.senkouB.setData(val.senkouB);
-                            if (val.chikou && series.chikou) series.chikou.setData(val.chikou);
-                        }
-                    } else if (type === 'pivotPoints') {
-                        // Update all 7 pivot point lines
-                        if (series.pivot) series.pivot.applyOptions({ visible: isVisible, color: ind.pivotColor || '#FF9800', lineWidth: ind.lineWidth || 1 });
-                        if (series.r1) series.r1.applyOptions({ visible: isVisible, color: ind.resistanceColor || '#EF5350', lineWidth: ind.lineWidth || 1 });
-                        if (series.r2) series.r2.applyOptions({ visible: isVisible, color: ind.resistanceColor || '#EF5350', lineWidth: ind.lineWidth || 1 });
-                        if (series.r3) series.r3.applyOptions({ visible: isVisible, color: ind.resistanceColor || '#EF5350', lineWidth: ind.lineWidth || 1 });
-                        if (series.s1) series.s1.applyOptions({ visible: isVisible, color: ind.supportColor || '#26A69A', lineWidth: ind.lineWidth || 1 });
-                        if (series.s2) series.s2.applyOptions({ visible: isVisible, color: ind.supportColor || '#26A69A', lineWidth: ind.lineWidth || 1 });
-                        if (series.s3) series.s3.applyOptions({ visible: isVisible, color: ind.supportColor || '#26A69A', lineWidth: ind.lineWidth || 1 });
-
-                        const val = calculatePivotPoints(data, ind.pivotType || 'classic', ind.timeframe || 'daily');
-                        if (val) {
-                            if (val.pivot && series.pivot) series.pivot.setData(val.pivot);
-                            if (val.r1 && series.r1) series.r1.setData(val.r1);
-                            if (val.r2 && series.r2) series.r2.setData(val.r2);
-                            if (val.r3 && series.r3) series.r3.setData(val.r3);
-                            if (val.s1 && series.s1) series.s1.setData(val.s1);
-                            if (val.s2 && series.s2) series.s2.setData(val.s2);
-                            if (val.s3 && series.s3) series.s3.setData(val.s3);
-                        }
+                    const markers = updateIndicatorSeries(series, ind, data, isVisible);
+                    if (markers && markers.length > 0) {
+                        allMarkers.push(...markers);
                     }
                 }
 
             });
         }
 
+        // ========== FIRST RED CANDLE INDICATOR (5-min only) ==========
+        const firstCandleInd = indicatorsArray?.find(ind => ind.type === 'firstCandle');
+        const is5MinChart = intervalRef.current === '5' || intervalRef.current === '5m';
+        const firstCandleEnabled = firstCandleInd?.visible !== false && is5MinChart;
 
+        if (firstCandleEnabled && firstCandleInd && data && data.length > 0) {
+            const highLineColor = firstCandleInd.highLineColor || '#ef5350';
+            const lowLineColor = firstCandleInd.lowLineColor || '#26a69a';
+
+            const result = calculateFirstCandle(data, {
+                highlightColor: firstCandleInd.highlightColor || '#FFD700',
+                highLineColor: highLineColor,
+                lowLineColor: lowLineColor
+            });
+
+            // Remove old line series if count changed
+            const existingCount = firstCandleSeriesRef.current.length;
+            const neededCount = (result.allLevels?.length || 0) * 2;
+
+            if (existingCount !== neededCount) {
+                for (const series of firstCandleSeriesRef.current) {
+                    try { chartRef.current.removeSeries(series); } catch (e) { /* ignore */ }
+                }
+                firstCandleSeriesRef.current = [];
+            }
+
+            // Create/update line series for each day's high and low
+            if (result.allLevels && result.allLevels.length > 0 && chartRef.current) {
+                let seriesIndex = 0;
+                for (const level of result.allLevels) {
+                    const { high, low, startTime, endTime } = level;
+
+                    // High line
+                    if (!firstCandleSeriesRef.current[seriesIndex]) {
+                        firstCandleSeriesRef.current[seriesIndex] = chartRef.current.addSeries(LineSeries, {
+                            color: highLineColor, lineWidth: 2, lineStyle: 2,
+                            priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+                        });
+                    }
+                    firstCandleSeriesRef.current[seriesIndex].setData([
+                        { time: startTime, value: high },
+                        { time: endTime, value: high }
+                    ]);
+                    seriesIndex++;
+
+                    // Low line
+                    if (!firstCandleSeriesRef.current[seriesIndex]) {
+                        firstCandleSeriesRef.current[seriesIndex] = chartRef.current.addSeries(LineSeries, {
+                            color: lowLineColor, lineWidth: 2, lineStyle: 2,
+                            priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+                        });
+                    }
+                    firstCandleSeriesRef.current[seriesIndex].setData([
+                        { time: startTime, value: low },
+                        { time: endTime, value: low }
+                    ]);
+                    seriesIndex++;
+                }
+            }
+
+            // Add First Candle markers to allMarkers for display on main chart
+            if (result.allMarkers && result.allMarkers.length > 0) {
+                allMarkers.push(...result.allMarkers);
+            }
+        } else if (!firstCandleEnabled) {
+            // Remove first candle series when disabled
+            for (const series of firstCandleSeriesRef.current) {
+                try { chartRef.current.removeSeries(series); } catch (e) { /* ignore */ }
+            }
+            firstCandleSeriesRef.current = [];
+        }
+
+        // ========== RANGE BREAKOUT INDICATOR ==========
+        const rangeBreakoutInd = indicatorsArray?.find(ind => ind.type === 'rangeBreakout');
+        const rangeBreakoutEnabled = rangeBreakoutInd?.visible !== false;
+
+        if (rangeBreakoutEnabled && rangeBreakoutInd && data && data.length > 0) {
+            const highColor = rangeBreakoutInd.highColor || '#089981';
+            const lowColor = rangeBreakoutInd.lowColor || '#F23645';
+            const lineWidth = rangeBreakoutInd.lineWidth || 2;
+
+            const result = calculateRangeBreakout(data, {
+                rangeStartHour: rangeBreakoutInd.rangeStartHour || 9,
+                rangeStartMinute: rangeBreakoutInd.rangeStartMinute || 30,
+                rangeEndHour: rangeBreakoutInd.rangeEndHour || 10,
+                rangeEndMinute: rangeBreakoutInd.rangeEndMinute || 0,
+                showSignals: rangeBreakoutInd.showSignals !== false,
+                highColor,
+                lowColor
+            });
+
+            // Remove old line series if count changed
+            const existingCount = rangeBreakoutSeriesRef.current.length;
+            const neededCount = (result.allLevels?.length || 0) * 2;
+
+            if (existingCount !== neededCount) {
+                for (const series of rangeBreakoutSeriesRef.current) {
+                    try { chartRef.current.removeSeries(series); } catch (e) { /* ignore */ }
+                }
+                rangeBreakoutSeriesRef.current = [];
+            }
+
+            // Create/update line series for each day's high and low
+            if (result.allLevels && result.allLevels.length > 0 && chartRef.current) {
+                let seriesIndex = 0;
+                for (const level of result.allLevels) {
+                    const { high, low, startTime, endTime } = level;
+
+                    // High line (green - breakout level)
+                    if (!rangeBreakoutSeriesRef.current[seriesIndex]) {
+                        rangeBreakoutSeriesRef.current[seriesIndex] = chartRef.current.addSeries(LineSeries, {
+                            color: highColor, lineWidth: lineWidth, lineStyle: 2, // dashed
+                            priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+                        });
+                    }
+                    rangeBreakoutSeriesRef.current[seriesIndex].setData([
+                        { time: startTime, value: high },
+                        { time: endTime, value: high }
+                    ]);
+                    seriesIndex++;
+
+                    // Low line (red - breakdown level)
+                    if (!rangeBreakoutSeriesRef.current[seriesIndex]) {
+                        rangeBreakoutSeriesRef.current[seriesIndex] = chartRef.current.addSeries(LineSeries, {
+                            color: lowColor, lineWidth: lineWidth, lineStyle: 2, // dashed
+                            priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+                        });
+                    }
+                    rangeBreakoutSeriesRef.current[seriesIndex].setData([
+                        { time: startTime, value: low },
+                        { time: endTime, value: low }
+                    ]);
+                    seriesIndex++;
+                }
+            }
+
+            // Collect markers for breakout/breakdown signals (will be set together with all other indicator markers)
+            if (result.markers && result.markers.length > 0) {
+                allMarkers.push(...result.markers);
+            }
+        } else if (!rangeBreakoutEnabled) {
+            // Remove range breakout series when disabled
+            for (const series of rangeBreakoutSeriesRef.current) {
+                try { chartRef.current.removeSeries(series); } catch (e) { /* ignore */ }
+            }
+            rangeBreakoutSeriesRef.current = [];
+            // Note: markers are handled collectively at the end of updateIndicators
+        }
+
+        // ==================== PRICE ACTION RANGE (PAR) INDICATOR ====================
+        const parIndicator = indicatorsArray?.find(i => i.type === 'priceActionRange');
+        const parEnabled = parIndicator && parIndicator.visible !== false;
+
+        if (parEnabled && chartRef.current && data.length > 0) {
+            const supportColor = parIndicator.supportColor || '#26a69a';
+            const resistanceColor = parIndicator.resistanceColor || '#ef5350';
+
+            const result = calculatePriceActionRange(data, {
+                supportColor,
+                resistanceColor
+            });
+
+            // Clean up existing PAR series if count changed
+            const existingCount = priceActionRangeSeriesRef.current.length;
+            const neededCount = result.allLevels.length;
+
+            if (existingCount !== neededCount) {
+                for (const series of priceActionRangeSeriesRef.current) {
+                    try { chartRef.current.removeSeries(series); } catch (e) { /* ignore */ }
+                }
+                priceActionRangeSeriesRef.current = [];
+            }
+
+            // Create or update line series for each support/resistance level
+            result.allLevels.forEach((level, idx) => {
+                const lineColor = level.type === 'support' ? supportColor : resistanceColor;
+
+                if (!priceActionRangeSeriesRef.current[idx]) {
+                    priceActionRangeSeriesRef.current[idx] = chartRef.current.addSeries(LineSeries, {
+                        color: lineColor,
+                        lineWidth: 2,
+                        lineStyle: 0, // Solid
+                        priceLineVisible: false,
+                        lastValueVisible: false,
+                    });
+                }
+
+                priceActionRangeSeriesRef.current[idx].setData([
+                    { time: level.startTime, value: level.value },
+                    { time: level.endTime, value: level.value }
+                ]);
+            });
+
+            // Collect breakout/breakdown markers
+            result.days.forEach(day => {
+                if (day.signals && day.signals.length > 0) {
+                    day.signals.forEach(signal => {
+                        allMarkers.push({
+                            time: signal.time,
+                            position: signal.type === 'breakout' ? 'aboveBar' : 'belowBar',
+                            color: signal.type === 'breakout' ? supportColor : resistanceColor,
+                            shape: signal.type === 'breakout' ? 'arrowUp' : 'arrowDown',
+                            text: `PAR: ${signal.type === 'breakout' ? 'Breakout' : 'Breakdown'}`
+                        });
+                    });
+                }
+            });
+        } else if (!parEnabled) {
+            // Remove PAR series when disabled
+            for (const series of priceActionRangeSeriesRef.current) {
+                try { chartRef.current.removeSeries(series); } catch (e) { /* ignore */ }
+            }
+            priceActionRangeSeriesRef.current = [];
+        }
 
         // --- CLEANUP LOGIC ---
         // Identify IDs that are no longer in the list
@@ -2872,6 +2717,26 @@ const ChartComponent = forwardRef(({
             indicatorSeriesMap.current.delete(id);
         });
 
+        // Set all collected markers on the main candlestick series using lightweight-charts v5 API
+        // This ensures markers from all indicators (ANN Strategy, Range Breakout, etc.) are displayed together
+        if (mainSeriesRef.current) {
+            try {
+                // Sort markers by time to ensure proper display order
+                allMarkers.sort((a, b) => a.time - b.time);
+
+                // In lightweight-charts v5, markers are handled via createSeriesMarkers
+                if (!seriesMarkersRef.current) {
+                    // Create the markers primitive if it doesn't exist
+                    seriesMarkersRef.current = createSeriesMarkers(mainSeriesRef.current, allMarkers);
+                } else {
+                    // Update existing markers primitive
+                    seriesMarkersRef.current.setMarkers(allMarkers);
+                }
+            } catch (e) {
+                console.warn('[Markers] Error setting markers:', e);
+            }
+        }
+
     }, []);
 
     // --- VISUAL TRADING DATA SYNC ---
@@ -2880,20 +2745,16 @@ const ChartComponent = forwardRef(({
 
         const currentSym = symbolRef.current || symbol; // prefer Ref but fallback to prop
 
-        // Filter orders/positions for current symbol
-        // Use looser matching to handle "SYMBOL:Exch" vs "SYMBOL" mismatch
-        const normalize = s => s ? s.split(':')[0] : '';
-        const target = normalize(currentSym);
-
-        const relevantOrders = (orders || []).filter(o => normalize(o.symbol) === target);
-        const relevantPositions = (positions || []).filter(p => normalize(p.symbol) === target);
+        // Filter orders/positions for current symbol using consistent helper
+        const relevantOrders = (orders || []).filter(o => areSymbolsEquivalent(o.symbol, currentSym));
+        const relevantPositions = (positions || []).filter(p => areSymbolsEquivalent(p.symbol, currentSym));
 
         if (process.env.NODE_ENV === 'development') {
             console.log('[VisualTrading] Sync:', {
                 currentSym,
-                target,
                 totalOrders: (orders || []).length,
-                relevantOrders,
+                relevantOrders: relevantOrders.length,
+                relevantPositions: relevantPositions.length,
                 allOrderSymbols: (orders || []).map(o => o.symbol)
             });
         }
@@ -2914,45 +2775,8 @@ const ChartComponent = forwardRef(({
     }, [onModifyOrder, onCancelOrder]);
 
     // --- VISUAL TRADING EVENT LISTENERS ---
-    useEffect(() => {
-        const container = chartContainerRef.current;
-        if (!container) return;
-
-        const handleMouseDown = (e) => {
-            if (visualTradingRef.current?.handleMouseDown) {
-                const rect = container.getBoundingClientRect();
-                const handled = visualTradingRef.current.handleMouseDown(e.clientX - rect.left, e.clientY - rect.top);
-                if (handled) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                }
-            }
-
-        };
-        const handleMouseMove = (e) => {
-            if (visualTradingRef.current?.handleMouseMove) {
-                const rect = container.getBoundingClientRect();
-                visualTradingRef.current.handleMouseMove(e.clientX - rect.left, e.clientY - rect.top);
-            }
-        };
-        const handleMouseUp = (e) => {
-            if (visualTradingRef.current?.handleMouseUp) {
-                const rect = container.getBoundingClientRect();
-                visualTradingRef.current.handleMouseUp(e.clientX - rect.left, e.clientY - rect.top);
-            }
-        };
-
-
-        container.addEventListener('mousedown', handleMouseDown, true); // Use capture to ensure we get event before chart swallows it
-        window.addEventListener('mousemove', handleMouseMove); // Window for drag continuation
-        window.addEventListener('mouseup', handleMouseUp);
-
-        return () => {
-            container.removeEventListener('mousedown', handleMouseDown, true);
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
-        };
-    }, []);
+    // NOTE: VisualTrading handles its own mouse events internally via attached() method.
+    // No need for manual event forwarding here.
 
     // ========== OI LINES EFFECT (Max Call OI, Max Put OI, Max Pain) ==========
     useEffect(() => {
@@ -3508,7 +3332,6 @@ const ChartComponent = forwardRef(({
 
                             if (currentTime) {
                                 // Use a reasonable default window that matches typical zoom
-                                const DEFAULT_VIEW_WINDOW = 200; // Larger window to avoid zooming in
                                 const startIndex = Math.max(0, currentIndex - DEFAULT_VIEW_WINDOW / 2);
                                 const endIndex = Math.min(fullDataRef.current.length - 1, currentIndex + DEFAULT_VIEW_WINDOW / 2);
 
@@ -3793,8 +3616,7 @@ const ChartComponent = forwardRef(({
 
                     // If no target range calculated, use a default that doesn't zoom in
                     if (!targetRange && selectedTime) {
-                        const VIEW_WINDOW = 300;
-                        const startIndex = Math.max(0, selectedIndex - VIEW_WINDOW / 2);
+                        const startIndex = Math.max(0, selectedIndex - EXTENDED_VIEW_WINDOW / 2);
                         const endIndex = selectedIndex;
                         const startTime = fullDataRef.current[startIndex]?.time;
                         const endTime = fullDataRef.current[endIndex]?.time;
@@ -3947,10 +3769,8 @@ const ChartComponent = forwardRef(({
         }
     }, [interval, symbol, exchange, tpoSettingsHash]);
 
-
-
-    // Helper to prepare indicators for the legend
-    const getActiveIndicators = useCallback(() => {
+    // Memoized active indicators for the legend (prevents recalculation on every render)
+    const activeIndicatorsForLegend = React.useMemo(() => {
         if (!Array.isArray(indicators)) return [];
 
         return indicators.map(ind => {
@@ -3970,6 +3790,10 @@ const ChartComponent = forwardRef(({
             if (ind.kPeriod) params += `${ind.kPeriod} `;
             if (ind.dPeriod) params += `${ind.dPeriod} `;
             if (ind.smooth) params += `${ind.smooth} `;
+            // Hilenga-Milenga params
+            if (ind.rsiLength) params += `${ind.rsiLength} `;
+            if (ind.emaLength) params += `${ind.emaLength} `;
+            if (ind.wmaLength) params += `${ind.wmaLength} `;
 
             if (ind.source && ind.source !== 'close') params += `${ind.source} `;
 
@@ -4000,43 +3824,43 @@ const ChartComponent = forwardRef(({
             />
             {isLoading && isActuallyLoadingRef.current && <div className={styles.loadingOverlay}><div className={styles.spinner}></div><div>Loading...</div></div>}
 
-            {/* Symbol + OHLC Header Bar - All on one line */}
-            <div className={styles.ohlcHeader} style={{ left: isToolbarVisible ? '55px' : '10px' }}>
-                <span className={styles.ohlcSymbol}>{strategyConfig?.displayName || `${symbol}:${exchange}`}</span>
-                <span className={styles.ohlcInterval}>· {interval.toUpperCase()}</span>
-                {ohlcData && (
-                    <>
-                        <span className={`${styles.ohlcDot} ${ohlcData.isUp ? '' : styles.down}`}></span>
-                        <div className={styles.ohlcValues}>
-                            <span className={styles.ohlcItem}>
-                                <span className={styles.ohlcLabel}>O</span>
-                                <span className={styles.ohlcValue}>{ohlcData.open?.toFixed(2)}</span>
-                            </span>
-                            <span className={styles.ohlcItem}>
-                                <span className={styles.ohlcLabel}>H</span>
-                                <span className={styles.ohlcValue}>{ohlcData.high?.toFixed(2)}</span>
-                            </span>
-                            <span className={styles.ohlcItem}>
-                                <span className={styles.ohlcLabel}>L</span>
-                                <span className={styles.ohlcValue}>{ohlcData.low?.toFixed(2)}</span>
-                            </span>
-                            <span className={styles.ohlcItem}>
-                                <span className={styles.ohlcLabel}>C</span>
-                                <span className={`${styles.ohlcValue} ${ohlcData.isUp ? styles.up : styles.down}`}>{ohlcData.close?.toFixed(2)}</span>
-                            </span>
-                            <span className={styles.ohlcChange}>
-                                <span className={`${styles.ohlcChangeValue} ${ohlcData.change >= 0 ? styles.up : styles.down}`}>
-                                    {ohlcData.change >= 0 ? '+' : ''}{ohlcData.change?.toFixed(2)} ({ohlcData.changePercent >= 0 ? '+' : ''}{ohlcData.changePercent?.toFixed(2)}%)
-                                </span>
-                            </span>
-                        </div>
-                    </>
-                )}
-            </div>
+            {error && (
+                <div className={styles.loadingOverlay}>
+                    <div style={{ color: '#F23645', marginBottom: '10px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '24px', marginBottom: '8px' }}>⚠️</div>
+                        <b>Error Loading Data</b>
+                        <div style={{ fontSize: '12px', marginTop: '4px', opacity: 0.8 }}>{error}</div>
+                    </div>
+                    <button
+                        onClick={() => window.location.reload()}
+                        style={{
+                            padding: '6px 16px',
+                            background: '#2962FF',
+                            border: 'none',
+                            borderRadius: '4px',
+                            color: 'white',
+                            cursor: 'pointer',
+                            fontSize: '13px'
+                        }}
+                    >
+                        Reload Page
+                    </button>
+                </div>
+            )}
+
+            {/* Symbol + OHLC Header Bar */}
+            <OHLCHeader
+                symbol={symbol}
+                exchange={exchange}
+                interval={interval}
+                strategyConfig={strategyConfig}
+                ohlcData={ohlcData}
+                isToolbarVisible={isToolbarVisible}
+            />
 
             {/* Indicator Legend - Using reusable component */}
             <IndicatorLegend
-                indicators={getActiveIndicators()}
+                indicators={activeIndicatorsForLegend}
                 panePositions={panePositions}
                 isToolbarVisible={isToolbarVisible}
                 isCollapsed={indicatorDropdownOpen}
@@ -4044,6 +3868,23 @@ const ChartComponent = forwardRef(({
                 onVisibilityToggle={onIndicatorVisibilityToggle}
                 onRemove={onIndicatorRemove}
                 onSettings={(indicatorType) => setIndicatorSettingsOpen(indicatorType)}
+                onPaneMenu={handlePaneMenu}
+            />
+
+            {/* Pane Context Menu - TradingView style */}
+            <PaneContextMenu
+                show={paneContextMenu.show}
+                x={paneContextMenu.x}
+                y={paneContextMenu.y}
+                paneId={paneContextMenu.paneId}
+                isMaximized={maximizedPane === paneContextMenu.paneId}
+                isCollapsed={collapsedPanes.has(paneContextMenu.paneId)}
+                canMoveUp={canPaneMoveUp(paneContextMenu.paneId)}
+                onMaximize={handleMaximizePane}
+                onCollapse={handleCollapsePane}
+                onMoveUp={handleMovePaneUp}
+                onDelete={handleDeletePane}
+                onClose={closePaneMenu}
             />
 
             {/* Per-Indicator Settings Dialog */}
@@ -4084,59 +3925,7 @@ const ChartComponent = forwardRef(({
             })()}
 
             {/* Shift+Click Quick Measure Overlay */}
-            {measureData && !measureData.isFirstPoint && (
-                <div
-                    className={styles.measureOverlay}
-                    style={{
-                        left: measureData.position.x,
-                        top: measureData.position.y,
-                    }}
-                >
-                    {/* Dashed line between points */}
-                    <svg
-                        className={styles.measureLine}
-                        style={{
-                            position: 'fixed',
-                            top: 0,
-                            left: 0,
-                            width: '100%',
-                            height: '100%',
-                            pointerEvents: 'none',
-                            zIndex: 99,
-                        }}
-                    >
-                        <line
-                            x1={measureData.line.x1}
-                            y1={measureData.line.y1}
-                            x2={measureData.line.x2}
-                            y2={measureData.line.y2}
-                            stroke={measureData.priceChange >= 0 ? '#26a69a' : '#ef5350'}
-                            strokeWidth="1"
-                            strokeDasharray="4,4"
-                        />
-                    </svg>
-                    <div className={styles.measureBox}>
-                        <div className={measureData.priceChange >= 0 ? styles.measureUp : styles.measureDown}>
-                            {measureData.priceChange >= 0 ? '+' : ''}{measureData.priceChange.toFixed(2)}
-                            {' '}({measureData.percentChange >= 0 ? '+' : ''}{measureData.percentChange.toFixed(2)}%)
-                        </div>
-                        <div className={styles.measureDetails}>
-                            {measureData.barCount} bars · {measureData.timeElapsed}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* First point indicator */}
-            {measureData && measureData.isFirstPoint && (
-                <div
-                    className={styles.measureStartPoint}
-                    style={{
-                        left: measureData.x - 4,
-                        top: measureData.y - 4,
-                    }}
-                />
-            )}
+            <MeasureOverlay measureData={measureData} />
 
             {isReplayMode && (
                 <ReplayControls
@@ -4185,14 +3974,30 @@ const ChartComponent = forwardRef(({
                 y={priceScaleMenu.y}
                 price={priceScaleMenu.price}
                 symbol={symbol}
+                ltp={dataRef.current?.length > 0 ? dataRef.current[dataRef.current.length - 1]?.close : null}
                 onAddAlert={() => {
                     const manager = lineToolManagerRef.current;
                     const userAlerts = manager && manager._userPriceAlerts;
                     if (userAlerts && priceScaleMenu.price != null) {
-                        userAlerts.openEditDialog('new', {
-                            price: priceScaleMenu.price,
-                            condition: 'crossing'
-                        });
+                        userAlerts.addAlertWithCondition(priceScaleMenu.price, 'crossing');
+                    }
+                }}
+                onPlaceSellOrder={(price, orderType) => {
+                    // Open trading panel with SELL pre-filled
+                    if (onOpenTradingPanel && priceScaleMenu.price != null) {
+                        onOpenTradingPanel('SELL', priceScaleMenu.price, orderType || 'LIMIT');
+                    }
+                }}
+                onPlaceBuyOrder={(price, orderType) => {
+                    // Open trading panel with BUY pre-filled
+                    if (onOpenTradingPanel && priceScaleMenu.price != null) {
+                        onOpenTradingPanel('BUY', priceScaleMenu.price, orderType || 'LIMIT');
+                    }
+                }}
+                onAddOrder={(price) => {
+                    // Open trading panel with default settings at price
+                    if (onOpenTradingPanel && priceScaleMenu.price != null) {
+                        onOpenTradingPanel('BUY', priceScaleMenu.price, 'LIMIT');
                     }
                 }}
                 onDrawHorizontalLine={() => {
@@ -4208,34 +4013,77 @@ const ChartComponent = forwardRef(({
             />
 
             {/* Right-click Context Menu */}
-            {contextMenu.show && (
-                <div
-                    className={styles.contextMenu}
-                    style={{ left: contextMenu.x, top: contextMenu.y }}
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    {contextMenu.orderId && (
-                        <button
-                            className={styles.contextMenuItem}
-                            onClick={() => {
-                                onCancelOrder?.(contextMenu.orderId);
-                                setContextMenu({ show: false, x: 0, y: 0 });
-                            }}
-                        >
-                            Cancel Order
-                        </button>
-                    )}
-                    <button
-                        className={styles.contextMenuItem}
-                        onClick={() => {
-                            onOpenOptionChain?.(symbol, exchange);
-                            setContextMenu({ show: false, x: 0, y: 0 });
-                        }}
-                    >
-                        View Option Chain
-                    </button>
-                </div>
-            )}
+            <ChartContextMenu
+                show={contextMenu.show}
+                x={contextMenu.x}
+                y={contextMenu.y}
+                orderId={contextMenu.orderId}
+                symbol={symbol}
+                exchange={exchange}
+                price={contextMenu.price}
+                ltp={dataRef.current?.length > 0 ? dataRef.current[dataRef.current.length - 1]?.close : null}
+                indicatorCount={indicators?.length || 0}
+                isVerticalCursorLocked={isVerticalCursorLocked}
+                onCancelOrder={onCancelOrder}
+                onOpenOptionChain={onOpenOptionChain}
+                onResetChartView={() => {
+                    // Reset chart to default view
+                    applyDefaultCandlePosition(dataRef.current?.length || 0);
+                }}
+                onCopyPrice={(price) => {
+                    // Price is copied in the component, just a notification hook
+                    console.log('Price copied:', price);
+                }}
+                onAddAlert={(price) => {
+                    // Add alert at the clicked price
+                    if (lineToolManagerRef.current) {
+                        const userAlerts = lineToolManagerRef.current._userPriceAlerts;
+                        if (userAlerts && typeof userAlerts.addAlertWithCondition === 'function') {
+                            userAlerts.addAlertWithCondition(price, 'crossing');
+                        }
+                    }
+                }}
+                onPlaceSellOrder={(price, orderType) => {
+                    // Open trading panel with SELL pre-filled
+                    if (onOpenTradingPanel) {
+                        onOpenTradingPanel('SELL', price, orderType || 'LIMIT');
+                    }
+                }}
+                onPlaceBuyOrder={(price, orderType) => {
+                    // Open trading panel with BUY pre-filled
+                    if (onOpenTradingPanel) {
+                        onOpenTradingPanel('BUY', price, orderType || 'LIMIT');
+                    }
+                }}
+                onAddOrder={(price) => {
+                    // Open trading panel with default settings at price
+                    if (onOpenTradingPanel) {
+                        onOpenTradingPanel('BUY', price, 'LIMIT');
+                    }
+                }}
+                onToggleCursorLock={() => {
+                    setIsVerticalCursorLocked(prev => !prev);
+                    // TODO: Implement actual crosshair lock functionality
+                }}
+                onOpenObjectTree={() => {
+                    if (onOpenObjectTree) {
+                        onOpenObjectTree();
+                    }
+                }}
+                onRemoveIndicator={() => {
+                    // Remove the last indicator
+                    if (indicators?.length > 0 && onIndicatorRemove) {
+                        const lastIndicator = indicators[indicators.length - 1];
+                        onIndicatorRemove(lastIndicator.id);
+                    }
+                }}
+                onOpenSettings={() => {
+                    if (onOpenSettings) {
+                        onOpenSettings();
+                    }
+                }}
+                onClose={() => setContextMenu({ show: false, x: 0, y: 0, price: null })}
+            />
 
         </div >
 

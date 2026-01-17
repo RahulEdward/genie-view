@@ -10,6 +10,7 @@ const ChartGrid = ({
     onMaximizeChart,
     chartRefs,
     onAlertsSync,
+    onDrawingsSync,
     onAlertTriggered,
     onReplayModeChange,
     ...chartProps
@@ -51,6 +52,7 @@ const ChartGrid = ({
                         exchange={chart.exchange || 'NSE'}
                         interval={chart.interval}
                         onAlertsSync={onAlertsSync ? (alerts) => onAlertsSync(chart.id, chart.symbol, chart.exchange || 'NSE', alerts) : undefined}
+                        onDrawingsSync={onDrawingsSync}
                         onAlertTriggered={onAlertTriggered ? (evt) => onAlertTriggered(chart.id, chart.symbol, chart.exchange || 'NSE', evt) : undefined}
                         onReplayModeChange={onReplayModeChange ? (isActive) => onReplayModeChange(chart.id, isActive) : undefined}
                         {...chartProps}
