@@ -76,13 +76,13 @@ export const createStochasticSeries = (chart) => {
             lineWidth: 2,
             priceLineVisible: false,
             lastValueVisible: true,
-            title: '%K'
+            title: '' // Hide from price scale
         }),
         d: pane.addSeries(LineSeries, {
             lineWidth: 2,
             priceLineVisible: false,
             lastValueVisible: true,
-            title: '%D'
+            title: '' // Hide from price scale
         })
     };
     return { series, pane };
@@ -102,13 +102,13 @@ export const createMACDSeries = (chart) => {
             lineWidth: 2,
             priceLineVisible: false,
             lastValueVisible: true,
-            title: 'MACD'
+            title: '' // Hide from price scale
         }),
         signal: pane.addSeries(LineSeries, {
             lineWidth: 2,
             priceLineVisible: false,
             lastValueVisible: true,
-            title: 'Signal'
+            title: '' // Hide from price scale
         })
     };
     return { series, pane };
@@ -312,21 +312,21 @@ export const createADXSeries = (chart, ind) => {
             lineWidth: ind.lineWidth || 2,
             priceLineVisible: false,
             lastValueVisible: true,
-            title: 'ADX'
+            title: '' // Hide from price scale
         }),
         plusDI: pane.addSeries(LineSeries, {
             color: ind.plusDIColor || '#26A69A',
             lineWidth: 1,
             priceLineVisible: false,
             lastValueVisible: false,
-            title: '+DI'
+            title: '' // Hide from price scale
         }),
         minusDI: pane.addSeries(LineSeries, {
             color: ind.minusDIColor || '#EF5350',
             lineWidth: 1,
             priceLineVisible: false,
             lastValueVisible: false,
-            title: '-DI'
+            title: '' // Hide from price scale
         })
     };
 
@@ -361,35 +361,35 @@ export const createIchimokuSeries = (chart, ind) => {
             lineWidth: 1,
             priceLineVisible: false,
             lastValueVisible: false,
-            title: 'Tenkan'
+            title: '' // Hide from price scale
         }),
         kijun: chart.addSeries(LineSeries, {
             color: ind.kijunColor || '#EF5350',
             lineWidth: 1,
             priceLineVisible: false,
             lastValueVisible: false,
-            title: 'Kijun'
+            title: '' // Hide from price scale
         }),
         senkouA: chart.addSeries(LineSeries, {
             color: ind.senkouAColor || '#26A69A',
             lineWidth: 1,
             priceLineVisible: false,
             lastValueVisible: false,
-            title: 'Senkou A'
+            title: '' // Hide from price scale
         }),
         senkouB: chart.addSeries(LineSeries, {
             color: ind.senkouBColor || '#EF5350',
             lineWidth: 1,
             priceLineVisible: false,
             lastValueVisible: false,
-            title: 'Senkou B'
+            title: '' // Hide from price scale
         }),
         chikou: chart.addSeries(LineSeries, {
             color: ind.chikouColor || '#9C27B0',
             lineWidth: 1,
             priceLineVisible: false,
             lastValueVisible: false,
-            title: 'Chikou'
+            title: '' // Hide from price scale
         })
     };
 };
@@ -407,7 +407,7 @@ export const createPivotPointsSeries = (chart, ind) => {
             lineStyle: 2,
             priceLineVisible: false,
             lastValueVisible: false,
-            title: 'PP'
+            title: '' // Hide from price scale
         }),
         r1: chart.addSeries(LineSeries, {
             color: ind.resistanceColor || '#EF5350',
@@ -415,7 +415,7 @@ export const createPivotPointsSeries = (chart, ind) => {
             lineStyle: 2,
             priceLineVisible: false,
             lastValueVisible: false,
-            title: 'R1'
+            title: '' // Hide from price scale
         }),
         r2: chart.addSeries(LineSeries, {
             color: ind.resistanceColor || '#EF5350',
@@ -423,7 +423,7 @@ export const createPivotPointsSeries = (chart, ind) => {
             lineStyle: 2,
             priceLineVisible: false,
             lastValueVisible: false,
-            title: 'R2'
+            title: '' // Hide from price scale
         }),
         r3: chart.addSeries(LineSeries, {
             color: ind.resistanceColor || '#EF5350',
@@ -431,7 +431,7 @@ export const createPivotPointsSeries = (chart, ind) => {
             lineStyle: 2,
             priceLineVisible: false,
             lastValueVisible: false,
-            title: 'R3'
+            title: '' // Hide from price scale
         }),
         s1: chart.addSeries(LineSeries, {
             color: ind.supportColor || '#26A69A',
@@ -439,7 +439,7 @@ export const createPivotPointsSeries = (chart, ind) => {
             lineStyle: 2,
             priceLineVisible: false,
             lastValueVisible: false,
-            title: 'S1'
+            title: '' // Hide from price scale
         }),
         s2: chart.addSeries(LineSeries, {
             color: ind.supportColor || '#26A69A',
@@ -447,7 +447,7 @@ export const createPivotPointsSeries = (chart, ind) => {
             lineStyle: 2,
             priceLineVisible: false,
             lastValueVisible: false,
-            title: 'S2'
+            title: '' // Hide from price scale
         }),
         s3: chart.addSeries(LineSeries, {
             color: ind.supportColor || '#26A69A',
@@ -455,7 +455,7 @@ export const createPivotPointsSeries = (chart, ind) => {
             lineStyle: 2,
             priceLineVisible: false,
             lastValueVisible: false,
-            title: 'S3'
+            title: '' // Hide from price scale
         })
     };
 };

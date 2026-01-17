@@ -8,7 +8,6 @@ import { UserProvider } from './context/UserContext.jsx'
 import { UIProvider } from './context/UIContext.jsx'
 import { ToolProvider } from './context/ToolContext.jsx'
 import { AlertProvider } from './context/AlertContext.jsx'
-import { ChartProvider } from './context/ChartContext.jsx'
 import { WatchlistProvider } from './context/WatchlistContext.jsx'
 
 // Apply theme immediately to prevent flash of default theme
@@ -35,11 +34,9 @@ createRoot(document.getElementById('root')).render(
           <UIProvider>
             <ToolProvider>
               <AlertProvider>
-                <ChartProvider>
-                    <WatchlistProvider>
-                      <App />
-                    </WatchlistProvider>
-                  </ChartProvider>
+                <WatchlistProvider>
+                  <App />
+                </WatchlistProvider>
               </AlertProvider>
             </ToolProvider>
           </UIProvider>

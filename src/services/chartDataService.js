@@ -67,11 +67,17 @@ export const getKlines = async (symbol, exchange = 'NSE', interval = '1d', limit
             // Use 180 days (6 months) to cover all hourly cases
             startDate.setDate(startDate.getDate() - 180);
         } else if (interval.includes('m')) {
-            // Minute intervals: many candles per day
-            // 1m: ~360 bars/day, 5m: ~72 bars/day, 15m: ~24 bars/day, 30m: ~12 bars/day
-            // 10 days is enough for 235 candles (even 30m gets 120 bars in 10 days)
-            // Additional data loaded via scroll-back if needed
-            startDate.setDate(startDate.getDate() - 10);
+            // Minute intervals: scale days based on granularity
+            // 1m: ~375 bars/day -> 15 days = ~5600 bars (plenty)
+            // 5m: ~75 bars/day -> 15 days = ~1100 bars (satisfies limit=1000)
+            // 15m: ~25 bars/day -> 60 days = ~1500 bars (satisfies limit=1000)
+            // 30m: ~12 bars/day -> 90 days = ~1080 bars
+            const minutes = parseInt(interval);
+            if (!isNaN(minutes) && minutes < 15) {
+                startDate.setDate(startDate.getDate() - 15);
+            } else {
+                startDate.setDate(startDate.getDate() - 90);
+            }
         } else if (/^(W|1w|M|1M)$/i.test(interval)) {
             startDate.setFullYear(startDate.getFullYear() - 10); // 10 years for weekly/monthly
         } else {
@@ -277,7 +283,26 @@ export const getTickerPrice = async (symbol, exchange = 'NSE', signal) => {
                 window.location.href = getLoginUrl();
                 return null;
             }
-            throw new Error(`OpenAlgo quotes error: ${response.status} ${response.statusText}`);
+
+            // Try to read custom error message from backend
+            let errorMessage = `OpenAlgo quotes error: ${response.status} ${response.statusText}`;
+            try {
+                const errorData = await response.text(); // Read text first as it might be html or string
+                if (errorData) {
+                    // Try to parse as JSON if possible
+                    try {
+                        const jsonError = JSON.parse(errorData);
+                        if (jsonError.message) errorMessage = jsonError.message;
+                        else errorMessage = errorData;
+                    } catch (e) {
+                        errorMessage = errorData;
+                    }
+                }
+            } catch (e) {
+                // Ignore read error
+            }
+
+            throw new Error(errorMessage);
         }
 
         const data = await response.json();
@@ -315,10 +340,14 @@ export const getTickerPrice = async (symbol, exchange = 'NSE', signal) => {
             };
         }
 
+        if (!data || !data.data) {
+            console.warn('[OpenAlgo] No data in quotes response for', symbol, data);
+        }
         return null;
     } catch (error) {
         if (error.name !== 'AbortError') {
             console.error('Error fetching ticker price:', error);
+            throw error; // Re-throw so consumers (App.jsx) can handle specific errors (e.g. invalid symbol)
         }
         return null;
     }

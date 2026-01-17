@@ -346,6 +346,21 @@ const IndicatorSettingsDialog = ({
                     </div>
                 );
 
+            case 'boolean':
+                return (
+                    <div key={field.key} className={styles.fieldRow}>
+                        <label className={styles.fieldLabel}>{field.label}</label>
+                        <label className={styles.toggleSwitch}>
+                            <input
+                                type="checkbox"
+                                checked={value === true || value === 'true'}
+                                onChange={(e) => handleChange(field.key, e.target.checked)}
+                            />
+                            <span className={styles.toggleSlider}></span>
+                        </label>
+                    </div>
+                );
+
             default:
                 return null;
         }

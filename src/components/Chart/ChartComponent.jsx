@@ -98,7 +98,10 @@ const ChartComponent = forwardRef(({
     strategyConfig = null, // { strategyType, legs: [{ id, symbol, direction, quantity }], exchange, displayName }
     onOpenOptionChain, // Callback to open option chain for current symbol
     oiLines = null, // { maxCallOI, maxPutOI, maxPain } - OI levels to display as price lines
-    showOILines = false // Whether to show OI lines
+    showOILines = false, // Whether to show OI lines
+    onOpenSettings, // Callback to open settings dialog
+    onOpenObjectTree, // Callback to open object tree panel
+    onOpenTradingPanel // Callback to open trading panel with pre-filled values (action, price, orderType)
 }, ref) => {
     // Get authentication status
     const { isAuthenticated } = useUser();
@@ -108,7 +111,8 @@ const ChartComponent = forwardRef(({
 
     const chartContainerRef = useRef();
     const [isLoading, setIsLoading] = useState(true);
-    const [contextMenu, setContextMenu] = useState({ show: false, x: 0, y: 0 });
+    const [contextMenu, setContextMenu] = useState({ show: false, x: 0, y: 0, price: null });
+    const [isVerticalCursorLocked, setIsVerticalCursorLocked] = useState(false);
     const [priceScaleMenu, setPriceScaleMenu] = useState({ visible: false, x: 0, y: 0, price: null });
     const [indicatorSettingsOpen, setIndicatorSettingsOpen] = useState(null); // which indicator's settings are open
     const [indicatorValues, setIndicatorValues] = useState({}); // Current value under cursor for each indicator { id: value }
@@ -124,7 +128,7 @@ const ChartComponent = forwardRef(({
     // Close context menu on click outside
     useEffect(() => {
         if (!contextMenu.show) return;
-        const handleClickAway = () => setContextMenu({ show: false, x: 0, y: 0 });
+        const handleClickAway = () => setContextMenu({ show: false, x: 0, y: 0, price: null });
         document.addEventListener('click', handleClickAway);
         return () => document.removeEventListener('click', handleClickAway);
     }, [contextMenu.show]);
@@ -158,6 +162,7 @@ const ChartComponent = forwardRef(({
     const dataRef = useRef([]);
     const comparisonSeriesRefs = useRef(new Map());
     const visualTradingRef = useRef(null);
+    const [error, setError] = useState(null);
 
     // Pane context menu hook
     const {
@@ -1645,8 +1650,20 @@ const ChartComponent = forwardRef(({
             // check for hovered order
             const hoveredOrderId = visualTradingRef.current ? visualTradingRef.current.getHoveredOrderId() : null;
 
+            // Calculate price at click point
+            let clickPrice = null;
+            if (mainSeriesRef.current && chartContainerRef.current) {
+                const rect = chartContainerRef.current.getBoundingClientRect();
+                const relativeY = event.clientY - rect.top;
+                try {
+                    clickPrice = mainSeriesRef.current.coordinateToPrice(relativeY);
+                } catch (e) {
+                    console.warn('Failed to convert coordinate to price', e);
+                }
+            }
+
             // Show custom context menu
-            setContextMenu({ show: true, x: event.clientX, y: event.clientY, orderId: hoveredOrderId });
+            setContextMenu({ show: true, x: event.clientX, y: event.clientY, orderId: hoveredOrderId, price: clickPrice });
         };
         const container = chartContainerRef.current;
         container.addEventListener('contextmenu', handleContextMenu, true);
@@ -1888,6 +1905,7 @@ const ChartComponent = forwardRef(({
                 if (cancelled) return;
 
                 if (Array.isArray(data) && data.length > 0 && mainSeriesRef.current) {
+                    setError(null); // Clear any previous errors
                     dataRef.current = data;
 
                     // Track the oldest loaded timestamp for scroll-back loading
@@ -2144,6 +2162,20 @@ const ChartComponent = forwardRef(({
                     return;
                 }
                 console.error('Error loading chart data:', error);
+
+                // Set user-friendly error message
+                let errorMessage = 'Failed to load chart data';
+                if (error.message && error.message.includes('Symbol')) {
+                    errorMessage = error.message;
+                } else if (error.status === 400 || error.status === 404) {
+                    errorMessage = `Symbol '${symbol}' not found`;
+                }
+
+                // If the error object has a JSON body with a message (from chartDataService logs), use it
+                // Note: The fetch service might reject with an Error object that has the text
+
+                setError(errorMessage);
+
                 if (!cancelled) {
                     isActuallyLoadingRef.current = false;
                     setIsLoading(false);
@@ -3792,6 +3824,30 @@ const ChartComponent = forwardRef(({
             />
             {isLoading && isActuallyLoadingRef.current && <div className={styles.loadingOverlay}><div className={styles.spinner}></div><div>Loading...</div></div>}
 
+            {error && (
+                <div className={styles.loadingOverlay}>
+                    <div style={{ color: '#F23645', marginBottom: '10px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '24px', marginBottom: '8px' }}>⚠️</div>
+                        <b>Error Loading Data</b>
+                        <div style={{ fontSize: '12px', marginTop: '4px', opacity: 0.8 }}>{error}</div>
+                    </div>
+                    <button
+                        onClick={() => window.location.reload()}
+                        style={{
+                            padding: '6px 16px',
+                            background: '#2962FF',
+                            border: 'none',
+                            borderRadius: '4px',
+                            color: 'white',
+                            cursor: 'pointer',
+                            fontSize: '13px'
+                        }}
+                    >
+                        Reload Page
+                    </button>
+                </div>
+            )}
+
             {/* Symbol + OHLC Header Bar */}
             <OHLCHeader
                 symbol={symbol}
@@ -3918,14 +3974,30 @@ const ChartComponent = forwardRef(({
                 y={priceScaleMenu.y}
                 price={priceScaleMenu.price}
                 symbol={symbol}
+                ltp={dataRef.current?.length > 0 ? dataRef.current[dataRef.current.length - 1]?.close : null}
                 onAddAlert={() => {
                     const manager = lineToolManagerRef.current;
                     const userAlerts = manager && manager._userPriceAlerts;
                     if (userAlerts && priceScaleMenu.price != null) {
-                        userAlerts.openEditDialog('new', {
-                            price: priceScaleMenu.price,
-                            condition: 'crossing'
-                        });
+                        userAlerts.addAlertWithCondition(priceScaleMenu.price, 'crossing');
+                    }
+                }}
+                onPlaceSellOrder={(price, orderType) => {
+                    // Open trading panel with SELL pre-filled
+                    if (onOpenTradingPanel && priceScaleMenu.price != null) {
+                        onOpenTradingPanel('SELL', priceScaleMenu.price, orderType || 'LIMIT');
+                    }
+                }}
+                onPlaceBuyOrder={(price, orderType) => {
+                    // Open trading panel with BUY pre-filled
+                    if (onOpenTradingPanel && priceScaleMenu.price != null) {
+                        onOpenTradingPanel('BUY', priceScaleMenu.price, orderType || 'LIMIT');
+                    }
+                }}
+                onAddOrder={(price) => {
+                    // Open trading panel with default settings at price
+                    if (onOpenTradingPanel && priceScaleMenu.price != null) {
+                        onOpenTradingPanel('BUY', priceScaleMenu.price, 'LIMIT');
                     }
                 }}
                 onDrawHorizontalLine={() => {
@@ -3948,9 +4020,69 @@ const ChartComponent = forwardRef(({
                 orderId={contextMenu.orderId}
                 symbol={symbol}
                 exchange={exchange}
+                price={contextMenu.price}
+                ltp={dataRef.current?.length > 0 ? dataRef.current[dataRef.current.length - 1]?.close : null}
+                indicatorCount={indicators?.length || 0}
+                isVerticalCursorLocked={isVerticalCursorLocked}
                 onCancelOrder={onCancelOrder}
                 onOpenOptionChain={onOpenOptionChain}
-                onClose={() => setContextMenu({ show: false, x: 0, y: 0 })}
+                onResetChartView={() => {
+                    // Reset chart to default view
+                    applyDefaultCandlePosition(dataRef.current?.length || 0);
+                }}
+                onCopyPrice={(price) => {
+                    // Price is copied in the component, just a notification hook
+                    console.log('Price copied:', price);
+                }}
+                onAddAlert={(price) => {
+                    // Add alert at the clicked price
+                    if (lineToolManagerRef.current) {
+                        const userAlerts = lineToolManagerRef.current._userPriceAlerts;
+                        if (userAlerts && typeof userAlerts.addAlertWithCondition === 'function') {
+                            userAlerts.addAlertWithCondition(price, 'crossing');
+                        }
+                    }
+                }}
+                onPlaceSellOrder={(price, orderType) => {
+                    // Open trading panel with SELL pre-filled
+                    if (onOpenTradingPanel) {
+                        onOpenTradingPanel('SELL', price, orderType || 'LIMIT');
+                    }
+                }}
+                onPlaceBuyOrder={(price, orderType) => {
+                    // Open trading panel with BUY pre-filled
+                    if (onOpenTradingPanel) {
+                        onOpenTradingPanel('BUY', price, orderType || 'LIMIT');
+                    }
+                }}
+                onAddOrder={(price) => {
+                    // Open trading panel with default settings at price
+                    if (onOpenTradingPanel) {
+                        onOpenTradingPanel('BUY', price, 'LIMIT');
+                    }
+                }}
+                onToggleCursorLock={() => {
+                    setIsVerticalCursorLocked(prev => !prev);
+                    // TODO: Implement actual crosshair lock functionality
+                }}
+                onOpenObjectTree={() => {
+                    if (onOpenObjectTree) {
+                        onOpenObjectTree();
+                    }
+                }}
+                onRemoveIndicator={() => {
+                    // Remove the last indicator
+                    if (indicators?.length > 0 && onIndicatorRemove) {
+                        const lastIndicator = indicators[indicators.length - 1];
+                        onIndicatorRemove(lastIndicator.id);
+                    }
+                }}
+                onOpenSettings={() => {
+                    if (onOpenSettings) {
+                        onOpenSettings();
+                    }
+                }}
+                onClose={() => setContextMenu({ show: false, x: 0, y: 0, price: null })}
             />
 
         </div >

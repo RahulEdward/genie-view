@@ -46,6 +46,7 @@ import { useTheme } from './context/ThemeContext';
 import { useUser } from './context/UserContext';
 import { OrderProvider } from './context/OrderContext';
 import { indicatorConfigs } from './components/IndicatorSettings/indicatorConfigs';
+import { useChart } from './hooks/useChart';
 
 import PositionTracker from './components/PositionTracker';
 import GlobalAlertPopup from './components/GlobalAlertPopup/GlobalAlertPopup';
@@ -99,102 +100,47 @@ const WorkspaceLoader = () => (
 // This ensures all useState initializers read from already-updated localStorage
 function AppContent({ isAuthenticated, setIsAuthenticated }) {
 
-  // Multi-Chart State
-  const [layout, setLayout] = useState(() => {
-    const saved = safeParseJSON(localStorage.getItem('tv_saved_layout'), null);
-    return saved && saved.layout ? saved.layout : '1';
-  });
+  // Multi-Chart State (Managed by useChart hook - ported from Context/Zustand)
+  const {
+    layout, setLayout,
+    activeChartId, setActiveChartId,
+    charts, setCharts,
+    activeChart,
+    // Derived properties
+    currentSymbol,
+    currentExchange,
+    currentInterval,
+    // Handlers
+    updateSymbol,
+    updateInterval,
+    addIndicator,
+    removeIndicator,
+    toggleIndicatorVisibility,
+    updateIndicatorSettings,
+    chartRefs, // Access to the global chart refs map
+    getChartRef
+  } = useChart();
+
   const [isMaximized, setIsMaximized] = useState(false);
-  const prevLayoutRef = useRef(null);
-  const [activeChartId, setActiveChartId] = useState(1);
-  const [charts, setCharts] = useState(() => {
-    const saved = safeParseJSON(localStorage.getItem('tv_saved_layout'), null);
-    const defaultIndicators = []; // Start with empty array for new charts
+  const prevLayoutRef = useRef(null); // Keep this for layout restore logic
 
-    // Migration function: converts old object format to new array format
-    const migrateIndicators = (indicators) => {
-      // If already an array, return as is
-      if (Array.isArray(indicators)) return indicators;
+  // Active chart check
+  // Note: activeChart is already derived in useChart, no need to memoize here again unless we need safe access
 
-      // Migrate object format to array
-      const migrated = [];
-      const timestamp = Date.now();
-      let counter = 0;
+  // Refs
+  // chartRefs is now provided by useChart. It is an object like { 1: ref, 2: ref }.
+  // Existing code expects chartRefs.current[id]. 
+  // IMPORTANT: useChart returns { chartRefs: { current: map } } to mimic ref object?
+  // Let's check useChart implementation.
+  // I implemented: chartRefs: { current: chartRefsMap }
+  // So consuming code `chartRefs.current[id]` works.
 
-      Object.entries(indicators).forEach(([type, config]) => {
-        // Skip hidden/disabled indicators if they were just booleans
-        if (config === false) return;
+  // Ref to track active chart symbol/exchange for background alert popup logic
+  const activeChartRef = React.useRef({ symbol: currentSymbol, exchange: currentExchange });
 
-        // Create base object
-        const base = {
-          id: `${type}_${timestamp}_${counter++}`,
-          type: type,
-          visible: true
-        };
-
-        // Handle boolean configs (old simple indicators)
-        if (config === true) {
-          // Add default props based on type if needed, or rely on chart component defaults
-          // For now, we just push the type. Chart component will handle defaults if missing.
-          // BUT better to have defaults here.
-          // Let's assume defaults are applied when adding. For migration, we keep it minimum.
-          if (type === 'sma') Object.assign(base, { period: 20, color: '#2196F3' });
-          if (type === 'ema') Object.assign(base, { period: 20, color: '#FF9800' });
-          migrated.push(base);
-          return;
-        }
-
-        // Handle object configs
-        if (typeof config === 'object' && config !== null) {
-          if (config.enabled === false) return; // Skip disabled
-
-          // Flatten config into the indicator object
-          // Old: { sma: { enabled: true, period: 20 } }
-          // New: { id: '...', type: 'sma', period: 20 }
-          const { enabled, ...settings } = config;
-          Object.assign(base, settings);
-          // Map 'hidden' to !visible
-          if (settings.hidden) {
-            base.visible = false;
-            delete base.hidden;
-          }
-          migrated.push(base);
-        }
-      });
-      return migrated;
-    };
-
-    if (saved && Array.isArray(saved.charts)) {
-      // Merge saved indicators with defaults to ensure new indicators are present
-      // Also ensure strategyConfig exists (for migration from older versions)
-      return saved.charts.map(chart => ({
-        ...chart,
-        indicators: migrateIndicators(chart.indicators || []).map(ind => {
-          // Auto-repair Pivot Points showing as 'classic' due to previous bug
-          if (ind.type === 'classic') {
-            return { ...ind, type: 'pivotPoints', pivotType: 'classic' };
-          }
-          return ind;
-        }),
-        strategyConfig: chart.strategyConfig ?? null
-      }));
-    }
-    return [
-      { id: 1, symbol: 'RELIANCE', exchange: 'NSE', interval: localStorage.getItem('tv_interval') || '1d', indicators: defaultIndicators, comparisonSymbols: [], strategyConfig: null }
-    ];
-  });
-
-  // Derived state for active chart (memoized to prevent recalculation on every render)
-  const activeChart = React.useMemo(
-    () => charts.find(c => c.id === activeChartId) || charts[0],
-    [charts, activeChartId]
-  );
-  const currentSymbol = activeChart.symbol;
-  const currentExchange = activeChart.exchange || 'NSE';
-  const currentInterval = activeChart.interval;
-
-  // Refs for multiple charts
-  const chartRefs = React.useRef({});
+  useEffect(() => {
+    activeChartRef.current = { symbol: currentSymbol, exchange: currentExchange };
+  }, [currentSymbol, currentExchange]);
 
   // Flag to skip next sync (used during resume to prevent duplicate)
   const skipNextSyncRef = React.useRef(false);
@@ -212,12 +158,22 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
     }
     try {
       const layoutData = { layout, charts };
-      localStorage.setItem('tv_saved_layout', JSON.stringify(layoutData));
-      logger.debug('[App] Auto-saved layout:', { layout, chartsCount: charts.length });
+      // Zustand handles persistence, but double check doesn't hurt, 
+      // although Zustand persist middleware writes to localStorage automatically.
+      // We can technically remove this useEffect if workspaceStore handles it.
+      // workspaceStore DOES handle 'tv_saved_layout' via persist name 'openalgo-workspace-storage'.
+      // Wait, 'openalgo-workspace-storage' is a NEW key.
+      // The old key was 'tv_saved_layout'.
+      // If I want to maintain compatibility or migrate, I left migration logic in workspaceStore.
+      // So I should disable this manual save or update it to save to the new key?
+      // Better to rely on the store's persistence.
+      // I will Keep it for now to ensure 'tv_saved_layout' is updated for other tools? 
+      // No, let's rely on store. I'll comment it out or remove it to avoid fighting.
     } catch (error) {
       console.error('Failed to auto-save layout:', error);
     }
   }, [layout, charts]);
+
   const [chartType, setChartType] = useState('candlestick');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchMode, setSearchMode] = useState('switch'); // 'switch' or 'add'
@@ -366,6 +322,13 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
 
   // Right Panel State
   const [activeRightPanel, setActiveRightPanel] = useState('watchlist');
+
+  // Trading Panel initial values (from context menu)
+  const [tradingPanelConfig, setTradingPanelConfig] = useState({
+    action: 'BUY',
+    price: '',
+    orderType: 'MARKET'
+  });
 
   // Position Tracker State
   const [positionTrackerSettings, setPositionTrackerSettings] = useState(() => {
@@ -643,7 +606,7 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
 
   // Indicator handlers extracted to hook
   const {
-    updateIndicatorSettings,
+    // updateIndicatorSettings, // Conflict with useChart
     handleAddIndicator,
     handleIndicatorRemove,
     handleIndicatorVisibilityToggle,
@@ -836,17 +799,7 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
   // Ref to store current watchlist symbols - fixes stale closure in WebSocket callback
   const watchlistSymbolsRef = useRef([]);
 
-  // Ref to track active chart symbol/exchange for background alert popup logic
-  const activeChartRef = useRef({ symbol: '', exchange: 'NSE' });
 
-  // Keep refs updated
-  useEffect(() => {
-    watchlistSymbolsRef.current = watchlistSymbols;
-  }, [watchlistSymbols]);
-
-  useEffect(() => {
-    activeChartRef.current = { symbol: currentSymbol, exchange: currentExchange };
-  }, [currentSymbol, currentExchange]);
 
   // Initialize TimeService on app mount - syncs time with WorldTimeAPI
   // Cleanup on unmount to prevent memory leak from orphaned interval
@@ -1007,17 +960,51 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
         exchange = symObj.exchange || 'NSE';
       }
 
-      const data = await getTickerPrice(symbol, exchange, abortController.signal);
-      if (data && mounted) {
-        return {
-          symbol, exchange,
-          last: parseFloat(data.lastPrice).toFixed(2),
-          open: data.open || 0,
-          chg: parseFloat(data.priceChange).toFixed(2),
-          chgP: parseFloat(data.priceChangePercent).toFixed(2) + '%',
-          volume: data.volume || 0,
-          up: parseFloat(data.priceChange) >= 0
-        };
+      const MAX_RETRIES = 2;
+      let attempt = 0;
+
+      while (attempt <= MAX_RETRIES) {
+        try {
+          const data = await getTickerPrice(symbol, exchange, abortController.signal);
+          if (data && mounted) {
+            return {
+              symbol, exchange,
+              last: parseFloat(data.lastPrice).toFixed(2),
+              open: data.open || 0,
+              chg: parseFloat(data.priceChange).toFixed(2),
+              chgP: parseFloat(data.priceChangePercent).toFixed(2) + '%',
+              volume: data.volume || 0,
+              up: parseFloat(data.priceChange) >= 0
+            };
+          }
+          // If data is null but no error thrown (auth redirect?), break
+          break;
+        } catch (error) {
+          if (error.name === 'AbortError') return null;
+
+          // Handle "Symbol not found" errors by automatically removing them - NO RETRY
+          if (error.message && ((error.message.includes('Symbol') && error.message.includes('not found')) || error.message.includes('400') || error.message.includes('404'))) {
+            console.warn(`Removing invalid symbol ${symbol}:${exchange} from watchlist due to error: ${error.message}`);
+            setTimeout(() => {
+              if (mounted) {
+                handleRemoveFromWatchlist({ symbol, exchange });
+                showToast(`Removed invalid symbol: ${symbol}`, 'warning');
+              }
+            }, 0);
+            return null;
+          }
+
+          // For other errors (network, 500s), retry
+          attempt++;
+          if (attempt > MAX_RETRIES) {
+            console.error(`Error fetching ${symbol} after ${MAX_RETRIES + 1} attempts:`, error);
+            return null;
+          }
+
+          const delay = 1000 * attempt; // Linear backoff: 1s, 2s
+          console.warn(`Fetch failed for ${symbol}. Retrying in ${delay}ms... (Attempt ${attempt}/${MAX_RETRIES})`);
+          if (mounted) await new Promise(resolve => setTimeout(resolve, delay));
+        }
       }
       return null;
     };
@@ -1316,7 +1303,7 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watchlistSymbolsKey, watchlistsState.activeListId, isAuthenticated]);
+  }, [watchlistSymbolsKey, watchlistsState.activeListId, isAuthenticated, handleRemoveFromWatchlist]);
 
   // Persist alerts/logs to localStorage with 24h retention
   useEffect(() => {
@@ -1915,6 +1902,9 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
               isOpen={true}
               onClose={() => setActiveRightPanel('watchlist')}
               showToast={showToast}
+              initialAction={tradingPanelConfig.action}
+              initialPrice={tradingPanelConfig.price}
+              initialOrderType={tradingPanelConfig.orderType}
             />
           ) : null
         }
@@ -1959,6 +1949,16 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
             onOpenOptionChain={handleOpenOptionChainForSymbol}
             oiLines={oiLines}
             showOILines={showOILines}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+            onOpenObjectTree={() => setActiveRightPanel('objectTree')}
+            onOpenTradingPanel={(action, price, orderType) => {
+              setTradingPanelConfig({
+                action: action || 'BUY',
+                price: price ? price.toFixed(2) : '',
+                orderType: orderType || 'LIMIT'
+              });
+              setActiveRightPanel('trade');
+            }}
           />
         }
       />
@@ -2153,17 +2153,16 @@ function App() {
   const { isAuthenticated, setIsAuthenticated } = useUser();
 
   // Cloud Workspace Sync - blocks until cloud data is fetched or 5s timeout
-  // syncKey changes when cloud data is applied, forcing AppContent remount
-  const { isLoaded: isWorkspaceLoaded, syncKey } = useCloudWorkspaceSync(isAuthenticated);
+  // Store is hydrated directly via setFromCloud, no remount needed
+  const { isLoaded: isWorkspaceLoaded } = useCloudWorkspaceSync(isAuthenticated);
 
   // Show loader while checking auth or loading cloud data
   if (!isWorkspaceLoaded) {
     return <WorkspaceLoader />;
   }
 
-  // Now mount AppContent - localStorage is already updated with cloud data
-  // Using syncKey as React key forces remount when cloud data is applied after login
-  return <AppContent key={syncKey} isAuthenticated={isAuthenticated} setIsAuthenticated={setIsAuthenticated} />;
+  // Now mount AppContent - store is already hydrated with cloud data
+  return <AppContent isAuthenticated={isAuthenticated} setIsAuthenticated={setIsAuthenticated} />;
 }
 
 export default App;

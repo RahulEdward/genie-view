@@ -16,7 +16,7 @@ vi.mock('./services/openalgo', () => ({
 }));
 
 vi.mock('./hooks/useCloudWorkspaceSync', () => ({
-    useCloudWorkspaceSync: () => ({ isLoaded: true, syncKey: 1 })
+    useCloudWorkspaceSync: () => ({ isLoaded: true, isSyncing: false })
 }));
 
 describe('App Component', () => {

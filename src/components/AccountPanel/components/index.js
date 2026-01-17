@@ -7,4 +7,3 @@ export { default as OrdersTable } from './OrdersTable';
 export { default as HoldingsTable } from './HoldingsTable';
 export { default as TradesTable } from './TradesTable';
 export { default as TableSettingsPanel } from './TableSettingsPanel';
-

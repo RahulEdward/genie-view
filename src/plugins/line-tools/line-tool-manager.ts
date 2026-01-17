@@ -2318,14 +2318,29 @@ export class LineToolManager extends PluginBase {
         // Left-click release stops drawing
         if (event.button === 0 && this._isDrawing) {
             event.preventDefault();
-            event.stopPropagation();
+            // Do NOT stop propagation. The chart (or window) needs to see the mouseup 
+            // to reset its own drag state, otherwise it might get stuck in a dragging mode.
+            // event.stopPropagation(); 
             this._isDrawing = false;
-            if (this._activeTool) {
+
+            // FIX: Continuous drawing for Brush/Highlighter
+            if (this._activeToolType === 'Brush' || this._activeToolType === 'Highlighter') {
+                // Stay in Brush mode:
+                // 1. Do NOT reset _activeToolType
+                // 2. Do NOT setChartInteraction(true)
+                // 3. Do NOT select the tool (so we don't switch toolbar to "Edit Mode" for the specific shape)
+
+                // Just cleanup active drawing state
+                this._activeTool = null;
+                this._points = [];
+                return;
+            } else if (this._activeTool) {
+                // Standard logic for other tools
                 this._selectTool(this._activeTool);
-                // Reset for immediate drag capability
                 this._activeToolType = 'None';
                 this._setChartInteraction(true);
             }
+
             this._activeTool = null;
             this._points = [];
         }

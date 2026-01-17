@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ChevronDown, ChevronUp, RefreshCw, X, Wallet, Minus, Maximize2, Minimize2, LogOut, XCircle, Wifi, WifiOff, Settings, Search, Filter } from 'lucide-react';
 import styles from './AccountPanel.module.css';
-import { ping, placeOrder, subscribeToMultiTicker } from '../../services/openalgo';
+import { ping, placeOrder, modifyOrder, cancelOrder, subscribeToMultiTicker } from '../../services/openalgo';
 import ExitPositionModal from '../ExitPositionModal';
 import ModifyOrderModal from './components/ModifyOrderModal';
 import CancelOrderModal from './components/CancelOrderModal';

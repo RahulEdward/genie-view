@@ -106,6 +106,62 @@ async def logout(
         )
 
 
+@router.post("/quick-login", response_model=LoginResponse)
+async def quick_login(
+    broker: str,
+    client_id: str,
+    totp: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Quick login using saved credentials.
+    Only requires TOTP - uses saved password and API key.
+    
+    - **broker**: Broker name (angelone)
+    - **client_id**: Client/User ID
+    - **totp**: TOTP code from authenticator app
+    
+    Returns API key for subsequent requests.
+    """
+    auth_service = AuthService(db)
+    
+    try:
+        result = await auth_service.quick_login(
+            broker_name=broker,
+            client_id=client_id,
+            totp=totp
+        )
+        
+        logger.info(f"Quick login successful for {client_id}")
+        
+        return LoginResponse(
+            status="success",
+            data=result
+        )
+        
+    except AuthenticationError as e:
+        logger.warning(f"Quick login failed for {client_id}: {e.message}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "status": "error",
+                "code": e.code,
+                "message": e.message,
+                "details": e.details
+            }
+        )
+    except Exception as e:
+        logger.error(f"Quick login error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "status": "error",
+                "code": "INTERNAL_ERROR",
+                "message": "Login failed due to internal error"
+            }
+        )
+
+
 @router.get("/credentials", response_model=SavedCredentialsResponse)
 async def list_credentials(
     db: AsyncSession = Depends(get_db)

@@ -24,6 +24,50 @@ class AuthService:
     def __init__(self, db: AsyncSession):
         self.db = db
     
+    async def quick_login(
+        self,
+        broker_name: str,
+        client_id: str,
+        totp: str
+    ) -> Dict[str, str]:
+        """
+        Quick login using saved credentials.
+        Only requires TOTP - uses saved password and API key.
+        
+        Args:
+            broker_name: Broker name (angelone, etc.)
+            client_id: Client/User ID
+            totp: TOTP code
+        
+        Returns:
+            Dict with generated API key for frontend
+        """
+        # Get saved credentials
+        saved = await self.get_saved_credentials(broker_name, client_id)
+        
+        if not saved:
+            raise AuthenticationError(
+                message="No saved credentials found for this account",
+                details={"error_code": "NO_SAVED_CREDENTIALS"}
+            )
+        
+        if not saved.get("password") or not saved.get("api_key"):
+            raise AuthenticationError(
+                message="Incomplete saved credentials. Please login with full credentials.",
+                details={"error_code": "INCOMPLETE_CREDENTIALS"}
+            )
+        
+        # Use saved credentials for login
+        return await self.login(
+            broker_name=broker_name,
+            client_id=client_id,
+            password=saved["password"],
+            totp=totp,
+            broker_api_key=saved["api_key"],
+            totp_secret=saved.get("totp_secret"),
+            save_credentials=False  # Already saved
+        )
+    
     async def login(
         self,
         broker_name: str,

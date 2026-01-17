@@ -10,14 +10,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "rollup": "^4.55.1",
     "classnames": "^2.5.1",
     "html2canvas": "^1.4.1",
     "lightweight-charts": "^5.0.9",
     "lucide-react": "^0.555.0",
     "prop-types": "^15.8.1",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "rollup": "^4.55.1",
+    "zustand": "^5.0.10"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

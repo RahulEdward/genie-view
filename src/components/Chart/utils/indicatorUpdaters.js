@@ -26,10 +26,13 @@ import { calculateHilengaMilenga } from '../../../utils/indicators/hilengaMileng
  */
 export const updateOverlaySeries = (series, ind, data, isVisible) => {
     const { type } = ind;
+    // Generate title only if showTitle is enabled
+    const title = ind.showTitle ? `${type.toUpperCase()} ${ind.period || 20}` : '';
+
     series.applyOptions({
         visible: isVisible,
         color: ind.color || (type === 'sma' ? '#2196F3' : '#FF9800'),
-        title: `${type.toUpperCase()} ${ind.period || 20}`
+        title
     });
 
     let val = null;
@@ -240,12 +243,11 @@ export const updateHilengaMilengaSeries = (series, ind, data, isVisible) => {
     if (series.wma) series.wma.applyOptions({ visible: isVisible, color: ind.wmaColor || '#EF5350' });
     if (series.baseline) series.baseline.applyOptions({ visible: isVisible });
 
-    const result = calculateHilengaMilenga(
-        data,
-        ind.rsiLength || 14,
-        ind.emaLength || 5,
-        ind.wmaLength || 45
-    );
+    const result = calculateHilengaMilenga(data, {
+        rsiLength: ind.rsiLength || 14,
+        emaLength: ind.emaLength || 5,
+        wmaLength: ind.wmaLength || 45
+    });
 
     if (result) {
         if (result.rsi && series.rsi) series.rsi.setData(result.rsi);

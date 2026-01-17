@@ -17,6 +17,7 @@ export const indicatorConfigs = {
         style: [
             { key: 'color', label: 'Line Color', type: 'color', default: '#2962FF' },
             { key: 'lineWidth', label: 'Line Width', type: 'number', min: 1, max: 5, default: 2 },
+            { key: 'showTitle', label: 'Show Title', type: 'boolean', default: false },
         ],
     },
 
@@ -32,6 +33,7 @@ export const indicatorConfigs = {
         style: [
             { key: 'color', label: 'Line Color', type: 'color', default: '#FF6D00' },
             { key: 'lineWidth', label: 'Line Width', type: 'number', min: 1, max: 5, default: 2 },
+            { key: 'showTitle', label: 'Show Title', type: 'boolean', default: false },
         ],
     },
 
@@ -49,6 +51,7 @@ export const indicatorConfigs = {
             { key: 'color', label: 'RSI Line', type: 'color', default: '#7B1FA2' },
             { key: 'overboughtColor', label: 'Overbought Line', type: 'color', default: '#F23645' },
             { key: 'oversoldColor', label: 'Oversold Line', type: 'color', default: '#089981' },
+            { key: 'showTitle', label: 'Show Title', type: 'boolean', default: false },
         ],
     },
 
@@ -64,6 +67,7 @@ export const indicatorConfigs = {
         style: [
             { key: 'kColor', label: '%K Line', type: 'color', default: '#2962FF' },
             { key: 'dColor', label: '%D Line', type: 'color', default: '#FF6D00' },
+            { key: 'showTitle', label: 'Show Title', type: 'boolean', default: false },
         ],
     },
 
@@ -82,6 +86,7 @@ export const indicatorConfigs = {
             { key: 'signalColor', label: 'Signal Line', type: 'color', default: '#FF6D00' },
             { key: 'histUpColor', label: 'Histogram Up', type: 'color', default: '#26A69A' },
             { key: 'histDownColor', label: 'Histogram Down', type: 'color', default: '#EF5350' },
+            { key: 'showTitle', label: 'Show Title', type: 'boolean', default: false },
         ],
     },
 
@@ -152,6 +157,7 @@ export const indicatorConfigs = {
         style: [
             { key: 'color', label: 'Line Color', type: 'color', default: '#2962FF' },
             { key: 'lineWidth', label: 'Line Width', type: 'number', min: 1, max: 5, default: 2 },
+            { key: 'showTitle', label: 'Show Title', type: 'boolean', default: false },
         ],
     },
     tpo: {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import openalgo from '../services/openalgo';
 import logger from '../utils/logger';
+import { useWorkspaceStore } from '../store/workspaceStore';
 
 // Debounce delay in milliseconds (2 seconds for quicker UX)
 const SYNC_DEBOUNCE_DELAY = 2000;
@@ -10,28 +11,56 @@ const CLOUD_FETCH_TIMEOUT = 5000;
 
 // Keys to sync - all chart settings
 const SYNC_KEYS = [
+    // Core chart state
     'tv_saved_layout',       // Chart layout with indicators, symbol, interval per chart
     'tv_watchlists',         // Watchlists
     'tv_theme',              // Theme (dark/light)
+    'tv_interval',           // Current interval/timeframe
+
+    // Intervals
     'tv_fav_intervals_v2',   // Favorite intervals
     'tv_custom_intervals',   // Custom intervals
-    'tv_drawing_defaults',   // Drawing tool defaults
-    'tv_alerts',             // Alerts
-    'tv_alert_logs',         // Alert logs
     'tv_last_nonfav_interval', // Last non-favorite interval
-    'tv_interval',           // Current interval/timeframe
+
+    // Chart appearance
     'tv_chart_appearance',   // Chart appearance (colors, candle style)
+    'tv_drawing_defaults',   // Drawing tool defaults
     'tv_drawing_templates',  // Drawing templates
-    'tv_template_favorites', // Template favorites
-    'tv_symbol_favorites',   // Symbol favorites
-    'tv_recent_symbols',     // Recent symbols
-    'tv_layout_templates',   // Layout templates
     'tv_favorite_drawing_tools', // Favorite drawing tools
     'tv_floating_toolbar_pos', // Floating toolbar position
+
+    // Alerts
+    'tv_alerts',             // Alerts
+    'tv_alert_logs',         // Alert logs
+    'tv_chart_alerts',       // Chart-specific alerts (per symbol)
+
+    // Templates
+    'tv_template_favorites', // Template favorites
+    'tv_layout_templates',   // Layout templates
+    'tv_chart_templates',    // Chart templates
+
+    // Symbols
+    'tv_symbol_favorites',   // Symbol favorites
+    'tv_recent_symbols',     // Recent symbols
+
+    // UI State
     'tv_recent_commands',    // Recent commands
+    'tv_account_panel_open', // Account panel visibility
+    'tv_watchlist_width',    // Watchlist panel width
+    'tv_account_panel_height', // Account panel height
+    'tv_show_oi_lines',      // OI lines toggle
+    'tv_position_tracker_settings', // Position tracker settings
+
+    // OpenAlgo settings
     'oa_session_break_visible', // Session break visibility setting
-    'oa_timer_visible'       // Timer visibility setting
+    'oa_timer_visible',      // Timer visibility setting
+    'oa_sound_settings',     // Sound/notification settings
+    'oa_custom_shortcuts',   // Custom keyboard shortcuts
+
+    // Option chain
+    'optionChainStrikeCount' // Option chain strike count preference
 ];
+
 
 /**
  * Hook to manage Cloud Workspace Synchronization
@@ -41,7 +70,7 @@ const SYNC_KEYS = [
  * - Tracks which auth state we've loaded for to prevent flash during transitions
  * 
  * @param {boolean|null} isAuthenticated - null=checking, false=not auth, true=authenticated
- * @returns {{ isLoaded: boolean, isSyncing: boolean, syncKey: number }}
+ * @returns {{ isLoaded: boolean, isSyncing: boolean }}
  */
 export const useCloudWorkspaceSync = (isAuthenticated) => {
     // Track which auth state we've completed loading for
@@ -49,12 +78,12 @@ export const useCloudWorkspaceSync = (isAuthenticated) => {
     // Uses a special 'uninitialized' symbol to distinguish from null/false/true
     const [loadedForAuth, setLoadedForAuth] = useState('uninitialized');
     const [isSyncing, setIsSyncing] = useState(false);
-    const [syncKey, setSyncKey] = useState(0); // Increment to force AppContent remount
+
+    // Get the setFromCloud action to hydrate store directly
+    const setFromCloud = useWorkspaceStore(state => state.setFromCloud);
 
     // Store last SAVED state (confirmed by server)
     const lastSavedState = useRef({});
-    // Store pending changes (scheduled but not yet saved)
-    const pendingChanges = useRef({});
     const saveTimeoutRef = useRef(null);
     const hasLoadedFromServer = useRef(false);
 
@@ -91,7 +120,7 @@ export const useCloudWorkspaceSync = (isAuthenticated) => {
         // This flag is set by ApiKeyDialog when it saves preferences from the validation response
         const cloudSyncDone = localStorage.getItem('_cloud_sync_done');
         if (cloudSyncDone === 'true') {
-            logger.info('[CloudSync] Preferences already loaded during login, skipping fetch');
+            logger.info('[CloudSync] Preferences already loaded during login, skipping fetch. Current Theme:', localStorage.getItem('tv_theme'));
             // Clear the flag for future sessions
             localStorage.removeItem('_cloud_sync_done');
             hasLoadedFromServer.current = true;
@@ -99,7 +128,18 @@ export const useCloudWorkspaceSync = (isAuthenticated) => {
             SYNC_KEYS.forEach(key => {
                 lastSavedState.current[key] = localStorage.getItem(key);
             });
+
+            // IMPORTANT: Hydrate the Zustand store from localStorage
+            // ApiKeyDialog saved to localStorage but didn't update the store
+            const savedLayout = localStorage.getItem('tv_saved_layout');
+            if (savedLayout) {
+                logger.info('[CloudSync] Hydrating workspace store from login-loaded data');
+                setFromCloud(savedLayout);
+            }
+
             setLoadedForAuth(true);
+            // Ensure listeners (like ThemeContext) update
+            window.dispatchEvent(new Event('cloud-sync-complete'));
             return;
         }
 
@@ -160,8 +200,16 @@ export const useCloudWorkspaceSync = (isAuthenticated) => {
                     Object.assign(window._chartPrefsCache, prefs);
 
                     logger.info(`[CloudSync] Applied ${appliedCount} preferences from cloud.`);
-                    // Increment syncKey to force AppContent remount with new localStorage data
-                    setSyncKey(prev => prev + 1);
+
+                    // CLOUD-FIRST: Hydrate store directly with layout data
+                    // This updates the Zustand store without requiring a remount
+                    if (prefs.tv_saved_layout) {
+                        logger.info('[CloudSync] Hydrating workspace store from cloud data');
+                        setFromCloud(prefs.tv_saved_layout);
+                    }
+
+                    // Dispatch event for contexts (like ThemeContext) that don't remount
+                    window.dispatchEvent(new Event('cloud-sync-complete'));
                 } else {
                     // No cloud data or timeout - use local state
                     logger.info('[CloudSync] No cloud preferences, using local state.');
@@ -185,83 +233,114 @@ export const useCloudWorkspaceSync = (isAuthenticated) => {
         loadPreferences();
     }, [isAuthenticated]);
 
-    // Watcher for changes (Auto-Save) - only when authenticated and loaded
+    // EVENT-BASED Auto-Save using Zustand subscribe (replaces polling)
+    // This is more efficient than polling - only triggers when actual changes occur
     useEffect(() => {
         if (isAuthenticated !== true || !isLoaded) return;
 
-        const checkForChanges = () => {
-            const newChanges = {};
-            let hasNewChanges = false;
+        // Debounced save function
+        const scheduleSave = () => {
+            // Collect all current values for sync keys
+            const toSave = {};
+            let hasChanges = false;
 
             SYNC_KEYS.forEach(key => {
                 const currentValue = localStorage.getItem(key);
                 const lastValue = lastSavedState.current[key];
 
-                // Check if this key has changed from last saved state
                 if (currentValue !== lastValue) {
-                    // Ignore both null/undefined cases
                     if (currentValue == null && lastValue == null) return;
-
-                    newChanges[key] = currentValue || "";
-                    hasNewChanges = true;
+                    toSave[key] = currentValue || "";
+                    hasChanges = true;
                 }
             });
 
-            if (hasNewChanges) {
-                // Check if these are different from pending changes
-                const pendingKeys = Object.keys(pendingChanges.current).sort().join(',');
-                const newKeys = Object.keys(newChanges).sort().join(',');
-                const isDifferentFromPending = pendingKeys !== newKeys;
+            if (!hasChanges) return;
 
-                if (isDifferentFromPending || !saveTimeoutRef.current) {
-                    logger.debug('[CloudSync] New changes detected:', Object.keys(newChanges));
+            logger.debug('[CloudSync] Changes detected, scheduling save:', Object.keys(toSave));
 
-                    // Update pending changes
-                    pendingChanges.current = { ...newChanges };
-
-                    // Clear existing timeout only if we have new/different changes
-                    if (saveTimeoutRef.current) {
-                        clearTimeout(saveTimeoutRef.current);
-                    }
-
-                    // Schedule new save
-                    saveTimeoutRef.current = setTimeout(async () => {
-                        const toSave = { ...pendingChanges.current };
-                        logger.info('[CloudSync] Executing auto-save for keys:', Object.keys(toSave));
-
-                        setIsSyncing(true);
-                        try {
-                            const success = await openalgo.saveUserPreferences(toSave);
-                            if (success) {
-                                // Update last saved state
-                                Object.entries(toSave).forEach(([key, val]) => {
-                                    lastSavedState.current[key] = val;
-                                });
-                                pendingChanges.current = {};
-                                logger.info('[CloudSync] Auto-save complete!');
-                            } else {
-                                logger.error('[CloudSync] Auto-save returned false');
-                            }
-                        } catch (err) {
-                            logger.error('[CloudSync] Auto-save failed:', err);
-                        } finally {
-                            setIsSyncing(false);
-                            saveTimeoutRef.current = null;
-                        }
-                    }, SYNC_DEBOUNCE_DELAY);
-                }
-                // If same pending changes, don't reset the timer - let it fire
+            // Clear existing timeout
+            if (saveTimeoutRef.current) {
+                clearTimeout(saveTimeoutRef.current);
             }
+
+            // Schedule debounced save
+            saveTimeoutRef.current = setTimeout(async () => {
+                // Re-collect changes at save time (in case more changes happened)
+                const finalToSave = {};
+                SYNC_KEYS.forEach(key => {
+                    const currentValue = localStorage.getItem(key);
+                    const lastValue = lastSavedState.current[key];
+                    if (currentValue !== lastValue && !(currentValue == null && lastValue == null)) {
+                        finalToSave[key] = currentValue || "";
+                    }
+                });
+
+                if (Object.keys(finalToSave).length === 0) {
+                    saveTimeoutRef.current = null;
+                    return;
+                }
+
+                logger.info('[CloudSync] Executing auto-save for keys:', Object.keys(finalToSave));
+
+                setIsSyncing(true);
+                try {
+                    const success = await openalgo.saveUserPreferences(finalToSave);
+                    if (success) {
+                        // Update last saved state
+                        Object.entries(finalToSave).forEach(([key, val]) => {
+                            lastSavedState.current[key] = val;
+                        });
+                        logger.info('[CloudSync] Auto-save complete!');
+                    } else {
+                        logger.error('[CloudSync] Auto-save returned false');
+                    }
+                } catch (err) {
+                    logger.error('[CloudSync] Auto-save failed:', err);
+                } finally {
+                    setIsSyncing(false);
+                    saveTimeoutRef.current = null;
+                }
+            }, SYNC_DEBOUNCE_DELAY);
         };
 
-        // Poll for localStorage changes every second
-        const pollInterval = setInterval(checkForChanges, 1000);
+        // Subscribe to Zustand store changes (for workspace state)
+        // This fires immediately when store state changes
+        const unsubscribeStore = useWorkspaceStore.subscribe(
+            (state) => ({ charts: state.charts, layout: state.layout, activeChartId: state.activeChartId }),
+            (newState, prevState) => {
+                // Only trigger if the values actually changed
+                if (JSON.stringify(newState) !== JSON.stringify(prevState)) {
+                    logger.debug('[CloudSync] Store change detected');
+                    scheduleSave();
+                }
+            },
+            { equalityFn: (a, b) => JSON.stringify(a) === JSON.stringify(b) }
+        );
+
+        // Also listen for storage events (for cross-tab sync and non-store keys)
+        // Note: 'storage' event only fires in OTHER tabs, but this catches theme changes etc.
+        const handleStorageEvent = (e) => {
+            if (e.key && SYNC_KEYS.includes(e.key)) {
+                logger.debug('[CloudSync] Storage event for:', e.key);
+                scheduleSave();
+            }
+        };
+        window.addEventListener('storage', handleStorageEvent);
+
+        // Listen for custom local storage changes (same-tab, from other components)
+        const handleLocalChange = () => {
+            scheduleSave();
+        };
+        window.addEventListener('oa-settings-changed', handleLocalChange);
 
         return () => {
-            clearInterval(pollInterval);
+            unsubscribeStore();
+            window.removeEventListener('storage', handleStorageEvent);
+            window.removeEventListener('oa-settings-changed', handleLocalChange);
             if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         };
     }, [isAuthenticated, isLoaded]);
 
-    return { isLoaded, isSyncing, syncKey };
+    return { isLoaded, isSyncing };
 };

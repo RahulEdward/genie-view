@@ -20,11 +20,20 @@ const BrokerLogin = ({ onLoginSuccess, onClose }) => {
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [savedAccounts, setSavedAccounts] = useState([]);
+    const [selectedSavedAccount, setSelectedSavedAccount] = useState(null);
+    const [isQuickLogin, setIsQuickLogin] = useState(false);
 
     // Fetch saved accounts on mount
     useEffect(() => {
         fetchSavedAccounts();
     }, []);
+
+    // Auto-select if only one saved account exists
+    useEffect(() => {
+        if (savedAccounts.length === 1 && !selectedSavedAccount) {
+            handleSelectAccount(savedAccounts[0]);
+        }
+    }, [savedAccounts]);
 
     const fetchSavedAccounts = async () => {
         try {
@@ -46,6 +55,12 @@ const BrokerLogin = ({ onLoginSuccess, onClose }) => {
             );
             if (response.ok) {
                 fetchSavedAccounts();
+                // Reset if deleted account was selected
+                if (selectedSavedAccount?.client_id === clientId) {
+                    setSelectedSavedAccount(null);
+                    setIsQuickLogin(false);
+                    setClientId('');
+                }
             }
         } catch (err) {
             console.error('Failed to delete account:', err);
@@ -53,38 +68,73 @@ const BrokerLogin = ({ onLoginSuccess, onClose }) => {
     };
 
     const handleSelectAccount = (account) => {
+        setSelectedSavedAccount(account);
+        setIsQuickLogin(true);
         setBroker(account.broker);
         setClientId(account.client_id);
-        // Clear other fields - user needs to enter password and TOTP
+        // Clear fields not needed for quick login
         setPassword('');
+        setApiKey('');
+        setTotpSecret('');
         setTotp('');
+        setError('');
+    };
+
+    const handleNewLogin = () => {
+        setSelectedSavedAccount(null);
+        setIsQuickLogin(false);
+        setClientId('');
+        setPassword('');
+        setApiKey('');
+        setTotp('');
+        setError('');
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         
-        if (!clientId.trim() || !password.trim() || !totp.trim() || !apiKey.trim()) {
-            setError('Please fill in all required fields');
-            return;
+        if (isQuickLogin) {
+            // Quick login - only TOTP required
+            if (!totp.trim()) {
+                setError('Please enter TOTP code');
+                return;
+            }
+        } else {
+            // Full login - all fields required
+            if (!clientId.trim() || !password.trim() || !totp.trim() || !apiKey.trim()) {
+                setError('Please fill in all required fields');
+                return;
+            }
         }
 
         setIsLoading(true);
         setError('');
 
         try {
-            const response = await fetch(`${API_BASE}/auth/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    broker,
-                    client_id: clientId,
-                    password,
-                    totp,
-                    api_key: apiKey,
-                    totp_secret: totpSecret || null,
-                    save_credentials: saveCredentials
-                })
-            });
+            let response;
+            
+            if (isQuickLogin && selectedSavedAccount) {
+                // Quick login with saved credentials
+                response = await fetch(`${API_BASE}/auth/quick-login?broker=${encodeURIComponent(broker)}&client_id=${encodeURIComponent(clientId)}&totp=${encodeURIComponent(totp)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            } else {
+                // Full login
+                response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        broker,
+                        client_id: clientId,
+                        password,
+                        totp,
+                        api_key: apiKey,
+                        totp_secret: totpSecret || null,
+                        save_credentials: saveCredentials
+                    })
+                });
+            }
 
             const data = await response.json();
 
@@ -218,155 +268,212 @@ const BrokerLogin = ({ onLoginSuccess, onClose }) => {
                 )}
 
                 <form onSubmit={handleSubmit}>
-                    {/* Broker Select */}
-                    <div style={{ marginBottom: '14px' }}>
-                        <label style={labelStyle}>Broker</label>
-                        <select
-                            value={broker}
-                            onChange={(e) => setBroker(e.target.value)}
-                            style={{ ...inputStyle, cursor: 'pointer' }}
-                        >
-                            <option value="angelone">Angel One</option>
-                        </select>
-                    </div>
+                    {/* Quick Login Mode - Only show TOTP */}
+                    {isQuickLogin && selectedSavedAccount ? (
+                        <>
+                            <div style={{
+                                padding: '16px',
+                                backgroundColor: '#131722',
+                                borderRadius: '4px',
+                                marginBottom: '16px',
+                                border: '1px solid #2962ff'
+                            }}>
+                                <div style={{ color: '#787b86', fontSize: '12px', marginBottom: '4px' }}>
+                                    Quick Login as
+                                </div>
+                                <div style={{ color: '#d1d4dc', fontSize: '16px', fontWeight: 500 }}>
+                                    {selectedSavedAccount.client_id}
+                                    <span style={{ color: '#787b86', fontSize: '13px', marginLeft: '8px' }}>
+                                        ({selectedSavedAccount.broker})
+                                    </span>
+                                </div>
+                            </div>
 
-                    {/* Client ID */}
-                    <div style={{ marginBottom: '14px' }}>
-                        <label style={labelStyle}>Client ID *</label>
-                        <input
-                            type="text"
-                            value={clientId}
-                            onChange={(e) => setClientId(e.target.value)}
-                            placeholder="Enter your client ID"
-                            style={inputStyle}
-                        />
-                    </div>
+                            {/* TOTP */}
+                            <div style={{ marginBottom: '14px' }}>
+                                <label style={labelStyle}>TOTP Code *</label>
+                                <input
+                                    type="text"
+                                    value={totp}
+                                    onChange={(e) => setTotp(e.target.value)}
+                                    placeholder="Enter 6-digit TOTP code"
+                                    maxLength={6}
+                                    style={inputStyle}
+                                    autoFocus
+                                />
+                            </div>
 
-                    {/* API Key */}
-                    <div style={{ marginBottom: '14px' }}>
-                        <label style={labelStyle}>API Key *</label>
-                        <div style={{ position: 'relative' }}>
-                            <input
-                                type={showApiKey ? 'text' : 'password'}
-                                value={apiKey}
-                                onChange={(e) => setApiKey(e.target.value)}
-                                placeholder="Enter your broker API key"
-                                style={{ ...inputStyle, paddingRight: '40px' }}
-                            />
-                            <button
-                                type="button"
-                                onClick={() => setShowApiKey(!showApiKey)}
-                                style={{
-                                    position: 'absolute',
-                                    right: '8px',
-                                    top: '50%',
-                                    transform: 'translateY(-50%)',
-                                    background: 'none',
-                                    border: 'none',
-                                    color: '#787b86',
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
-                            </button>
-                        </div>
-                    </div>
+                            {/* Switch to full login */}
+                            <div style={{ marginBottom: '16px', textAlign: 'center' }}>
+                                <button
+                                    type="button"
+                                    onClick={handleNewLogin}
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        color: '#2962ff',
+                                        fontSize: '13px',
+                                        cursor: 'pointer',
+                                        textDecoration: 'underline'
+                                    }}
+                                >
+                                    Login with different account
+                                </button>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            {/* Broker Select */}
+                            <div style={{ marginBottom: '14px' }}>
+                                <label style={labelStyle}>Broker</label>
+                                <select
+                                    value={broker}
+                                    onChange={(e) => setBroker(e.target.value)}
+                                    style={{ ...inputStyle, cursor: 'pointer' }}
+                                >
+                                    <option value="angelone">Angel One</option>
+                                </select>
+                            </div>
 
-                    {/* Password */}
-                    <div style={{ marginBottom: '14px' }}>
-                        <label style={labelStyle}>Password/PIN *</label>
-                        <div style={{ position: 'relative' }}>
-                            <input
-                                type={showPassword ? 'text' : 'password'}
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                placeholder="Enter your password or PIN"
-                                style={{ ...inputStyle, paddingRight: '40px' }}
-                            />
-                            <button
-                                type="button"
-                                onClick={() => setShowPassword(!showPassword)}
-                                style={{
-                                    position: 'absolute',
-                                    right: '8px',
-                                    top: '50%',
-                                    transform: 'translateY(-50%)',
-                                    background: 'none',
-                                    border: 'none',
-                                    color: '#787b86',
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                            </button>
-                        </div>
-                    </div>
+                            {/* Client ID */}
+                            <div style={{ marginBottom: '14px' }}>
+                                <label style={labelStyle}>Client ID *</label>
+                                <input
+                                    type="text"
+                                    value={clientId}
+                                    onChange={(e) => setClientId(e.target.value)}
+                                    placeholder="Enter your client ID"
+                                    style={inputStyle}
+                                />
+                            </div>
 
-                    {/* TOTP */}
-                    <div style={{ marginBottom: '14px' }}>
-                        <label style={labelStyle}>TOTP Code *</label>
-                        <input
-                            type="text"
-                            value={totp}
-                            onChange={(e) => setTotp(e.target.value)}
-                            placeholder="Enter 6-digit TOTP code"
-                            maxLength={6}
-                            style={inputStyle}
-                        />
-                    </div>
+                            {/* API Key */}
+                            <div style={{ marginBottom: '14px' }}>
+                                <label style={labelStyle}>API Key *</label>
+                                <div style={{ position: 'relative' }}>
+                                    <input
+                                        type={showApiKey ? 'text' : 'password'}
+                                        value={apiKey}
+                                        onChange={(e) => setApiKey(e.target.value)}
+                                        placeholder="Enter your broker API key"
+                                        style={{ ...inputStyle, paddingRight: '40px' }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowApiKey(!showApiKey)}
+                                        style={{
+                                            position: 'absolute',
+                                            right: '8px',
+                                            top: '50%',
+                                            transform: 'translateY(-50%)',
+                                            background: 'none',
+                                            border: 'none',
+                                            color: '#787b86',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                                    </button>
+                                </div>
+                            </div>
 
-                    {/* TOTP Secret (Optional) */}
-                    <div style={{ marginBottom: '14px' }}>
-                        <label style={labelStyle}>
-                            TOTP Secret 
-                            <span style={{ color: '#787b86', fontWeight: 400 }}> (optional, for auto-TOTP)</span>
-                        </label>
-                        <div style={{ position: 'relative' }}>
-                            <input
-                                type={showTotpSecret ? 'text' : 'password'}
-                                value={totpSecret}
-                                onChange={(e) => setTotpSecret(e.target.value)}
-                                placeholder="Enter TOTP secret key"
-                                style={{ ...inputStyle, paddingRight: '40px' }}
-                            />
-                            <button
-                                type="button"
-                                onClick={() => setShowTotpSecret(!showTotpSecret)}
-                                style={{
-                                    position: 'absolute',
-                                    right: '8px',
-                                    top: '50%',
-                                    transform: 'translateY(-50%)',
-                                    background: 'none',
-                                    border: 'none',
-                                    color: '#787b86',
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                {showTotpSecret ? <EyeOff size={16} /> : <Eye size={16} />}
-                            </button>
-                        </div>
-                    </div>
+                            {/* Password */}
+                            <div style={{ marginBottom: '14px' }}>
+                                <label style={labelStyle}>Password/PIN *</label>
+                                <div style={{ position: 'relative' }}>
+                                    <input
+                                        type={showPassword ? 'text' : 'password'}
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        placeholder="Enter your password or PIN"
+                                        style={{ ...inputStyle, paddingRight: '40px' }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                        style={{
+                                            position: 'absolute',
+                                            right: '8px',
+                                            top: '50%',
+                                            transform: 'translateY(-50%)',
+                                            background: 'none',
+                                            border: 'none',
+                                            color: '#787b86',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                    </button>
+                                </div>
+                            </div>
 
-                    {/* Save Credentials Checkbox */}
-                    <div style={{ marginBottom: '20px' }}>
-                        <label style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            cursor: 'pointer',
-                            color: '#d1d4dc',
-                            fontSize: '13px'
-                        }}>
-                            <input
-                                type="checkbox"
-                                checked={saveCredentials}
-                                onChange={(e) => setSaveCredentials(e.target.checked)}
-                                style={{ cursor: 'pointer' }}
-                            />
-                            Save credentials for quick login
-                        </label>
-                    </div>
+                            {/* TOTP */}
+                            <div style={{ marginBottom: '14px' }}>
+                                <label style={labelStyle}>TOTP Code *</label>
+                                <input
+                                    type="text"
+                                    value={totp}
+                                    onChange={(e) => setTotp(e.target.value)}
+                                    placeholder="Enter 6-digit TOTP code"
+                                    maxLength={6}
+                                    style={inputStyle}
+                                />
+                            </div>
+
+                            {/* TOTP Secret (Optional) */}
+                            <div style={{ marginBottom: '14px' }}>
+                                <label style={labelStyle}>
+                                    TOTP Secret 
+                                    <span style={{ color: '#787b86', fontWeight: 400 }}> (optional, for auto-TOTP)</span>
+                                </label>
+                                <div style={{ position: 'relative' }}>
+                                    <input
+                                        type={showTotpSecret ? 'text' : 'password'}
+                                        value={totpSecret}
+                                        onChange={(e) => setTotpSecret(e.target.value)}
+                                        placeholder="Enter TOTP secret key"
+                                        style={{ ...inputStyle, paddingRight: '40px' }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowTotpSecret(!showTotpSecret)}
+                                        style={{
+                                            position: 'absolute',
+                                            right: '8px',
+                                            top: '50%',
+                                            transform: 'translateY(-50%)',
+                                            background: 'none',
+                                            border: 'none',
+                                            color: '#787b86',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        {showTotpSecret ? <EyeOff size={16} /> : <Eye size={16} />}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Save Credentials Checkbox */}
+                            <div style={{ marginBottom: '20px' }}>
+                                <label style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    cursor: 'pointer',
+                                    color: '#d1d4dc',
+                                    fontSize: '13px'
+                                }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={saveCredentials}
+                                        onChange={(e) => setSaveCredentials(e.target.checked)}
+                                        style={{ cursor: 'pointer' }}
+                                    />
+                                    Save credentials for quick login
+                                </label>
+                            </div>
+                        </>
+                    )}
 
                     {/* Error Message */}
                     {error && (

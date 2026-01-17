@@ -4,13 +4,22 @@ import styles from './TradingPanel.module.css';
 import { subscribeToTicker, placeOrder, getLotSize } from '../../services/openalgo';
 import Toast from '../Toast/Toast';
 
-const TradingPanel = ({ symbol, exchange = 'NSE', isOpen, onClose, showToast }) => {
-    // Local State
-    const [action, setAction] = useState('BUY'); // BUY | SELL
-    const [orderType, setOrderType] = useState('MARKET'); // MARKET | LIMIT | SL | SL-M
+const TradingPanel = ({
+    symbol,
+    exchange = 'NSE',
+    isOpen,
+    onClose,
+    showToast,
+    initialAction = 'BUY',      // Initial action from context menu
+    initialPrice = '',          // Initial price from context menu
+    initialOrderType = 'MARKET' // Initial order type from context menu
+}) => {
+    // Local State - use initial values from props
+    const [action, setAction] = useState(initialAction);
+    const [orderType, setOrderType] = useState(initialOrderType);
     const [product, setProduct] = useState('MIS'); // MIS | CNC | NRML
     const [quantity, setQuantity] = useState('1');
-    const [price, setPrice] = useState('');
+    const [price, setPrice] = useState(initialPrice);
     const [triggerPrice, setTriggerPrice] = useState('');
 
     // Lot Size State
@@ -61,6 +70,17 @@ const TradingPanel = ({ symbol, exchange = 'NSE', isOpen, onClose, showToast }) 
             setIsSubscribed(false);
         };
     }, [isOpen, symbol, exchange]);
+
+    // Sync state when initial values change (from context menu)
+    useEffect(() => {
+        if (isOpen) {
+            setAction(initialAction);
+            setOrderType(initialOrderType);
+            if (initialPrice) {
+                setPrice(initialPrice);
+            }
+        }
+    }, [isOpen, initialAction, initialOrderType, initialPrice]);
 
     // Fetch lot size when symbol/exchange changes
     useEffect(() => {

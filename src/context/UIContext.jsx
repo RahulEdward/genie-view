@@ -38,6 +38,9 @@ export const UIProvider = ({ children }) => {
     // Toolbar visibility
     const [showDrawingToolbar, setShowDrawingToolbar] = useState(true);
 
+    // Right panel state
+    const [activeRightPanel, setActiveRightPanel] = useState('watchlist');
+
     // Helper: Open search with specific mode
     const openSearch = useCallback((mode = 'switch', initialValue = '') => {
         setSearchMode(mode);
@@ -174,6 +177,10 @@ export const UIProvider = ({ children }) => {
         // Toolbar
         showDrawingToolbar,
         setShowDrawingToolbar,
+
+        // Right panel
+        activeRightPanel,
+        setActiveRightPanel,
 
         // Helpers
         closeAllModals,

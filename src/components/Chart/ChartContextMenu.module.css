@@ -1,0 +1,136 @@
+/* Chart Context Menu Styles - TradingView Style */
+
+.contextMenu {
+    position: fixed;
+    background-color: var(--tv-color-popup-background, #1e222d);
+    border: 1px solid var(--tv-color-border, #363a45);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    z-index: 1000;
+    min-width: 280px;
+    padding: 6px 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif;
+}
+
+.contextMenuItem {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    color: var(--tv-color-text-primary, #d1d4dc);
+    font-size: 13px;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.1s ease;
+    gap: 8px;
+}
+
+.contextMenuItem:hover {
+    background-color: var(--tv-color-toolbar-button-background-hover, rgba(255, 255, 255, 0.08));
+}
+
+.contextMenuItem:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.contextMenuItem.active {
+    background-color: rgba(41, 98, 255, 0.1);
+}
+
+.contextMenuItem.danger {
+    color: #f23645;
+}
+
+.contextMenuItem.danger:hover {
+    background-color: rgba(242, 54, 69, 0.1);
+}
+
+/* Menu Icon */
+.menuIcon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    color: var(--tv-color-text-secondary, #787b86);
+    flex-shrink: 0;
+}
+
+.contextMenuItem:hover .menuIcon {
+    color: var(--tv-color-text-primary, #d1d4dc);
+}
+
+/* Menu Label */
+.menuLabel {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Keyboard Shortcut */
+.menuShortcut {
+    color: var(--tv-color-text-secondary, #787b86);
+    font-size: 12px;
+    margin-left: auto;
+    padding-left: 16px;
+    white-space: nowrap;
+}
+
+/* Checkmark for active items */
+.checkmark {
+    color: #2962ff;
+    font-size: 14px;
+    margin-left: 8px;
+}
+
+/* Divider */
+.divider {
+    height: 1px;
+    background-color: var(--tv-color-border, #363a45);
+    margin: 4px 8px;
+}
+
+/* Section Header (if needed) */
+.sectionHeader {
+    padding: 4px 12px;
+    color: var(--tv-color-text-secondary, #787b86);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Light theme overrides */
+:global([data-theme="light"]) .contextMenu {
+    background-color: #ffffff;
+    border-color: #e0e3eb;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+:global([data-theme="light"]) .contextMenuItem {
+    color: #131722;
+}
+
+:global([data-theme="light"]) .contextMenuItem:hover {
+    background-color: rgba(0, 0, 0, 0.04);
+}
+
+:global([data-theme="light"]) .menuIcon {
+    color: #787b86;
+}
+
+:global([data-theme="light"]) .contextMenuItem:hover .menuIcon {
+    color: #131722;
+}
+
+:global([data-theme="light"]) .menuShortcut {
+    color: #787b86;
+}
+
+:global([data-theme="light"]) .divider {
+    background-color: #e0e3eb;
+}
