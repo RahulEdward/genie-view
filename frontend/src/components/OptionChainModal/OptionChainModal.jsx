@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { X, Loader2, RefreshCw, ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from 'lucide-react';
-import { getOptionChain, getAvailableExpiries, UNDERLYINGS } from '../../services/optionChain';
-import { subscribeToMultiTicker, getMultiOptionGreeks } from '../../services/angelalgo';
+import { getOptionChain, getAvailableExpiries, UNDERLYINGS, fetchMultiOptionGreeks } from '../../services/optionChain';
+import { wsManager } from '../../services/websocketManager';
 import styles from './OptionChainModal.module.css';
 import classNames from 'classnames';
 
@@ -24,7 +24,6 @@ const OptionChainModal = ({ isOpen, onClose, onSelectOption, initialSymbol }) =>
     const [strikeCount, setStrikeCount] = useState(15); // Dynamic strike count
     const [isLoadingMore, setIsLoadingMore] = useState(false); // Loading state for load more
     const tableBodyRef = useRef(null);
-    const wsRef = useRef(null);
 
     // Greeks mode state
     const [viewMode, setViewMode] = useState('ltp-oi'); // 'ltp-oi' or 'greeks'
@@ -258,7 +257,8 @@ const OptionChainModal = ({ isOpen, onClose, onSelectOption, initialSymbol }) =>
     }, [underlying.symbol, underlying.exchange]);
 
     // Fetch chain with request ID tracking to prevent stale responses
-    const fetchChain = useCallback(async (requestedStrikeCount = strikeCount) => {
+    const fetchChain = useCallback(async (arg) => {
+        const requestedStrikeCount = (typeof arg === 'number') ? arg : strikeCount;
         if (!selectedExpiry) return;
 
         // Increment request ID and capture current value
@@ -343,12 +343,6 @@ const OptionChainModal = ({ isOpen, onClose, onSelectOption, initialSymbol }) =>
 
     // WebSocket subscription for live LTP updates
     useEffect(() => {
-        // Cleanup previous subscription
-        if (wsRef.current) {
-            wsRef.current.close();
-            wsRef.current = null;
-        }
-
         if (!isOpen || !optionChain?.chain?.length) return;
 
         // Build symbol list from chain (include underlying for live spot price)
@@ -364,28 +358,29 @@ const OptionChainModal = ({ isOpen, onClose, onSelectOption, initialSymbol }) =>
 
         console.log('[OptionChain] Subscribing to', symbols.length, 'option symbols for live LTP');
 
-        // Subscribe to WebSocket
-        wsRef.current = subscribeToMultiTicker(symbols, (ticker) => {
-            setLiveLTP(prev => {
-                const newMap = new Map(prev);
-                newMap.set(ticker.symbol, {
-                    ltp: ticker.last,
-                    volume: ticker.volume,
-                    timestamp: Date.now()
+        // Subscribe to WebSocket using wsManager
+        symbols.forEach(({ symbol, exchange }) => {
+            wsManager.subscribe(symbol, exchange, (tick) => {
+                setLiveLTP(prev => {
+                    const newMap = new Map(prev);
+                    newMap.set(symbol, {
+                        ltp: tick.ltp || tick.last,
+                        volume: tick.volume,
+                        timestamp: Date.now()
+                    });
+                    return newMap;
                 });
-                return newMap;
             });
         });
 
         return () => {
-            if (wsRef.current) {
-                console.log('[OptionChain] Unsubscribing from live LTP');
-                wsRef.current.close();
-                wsRef.current = null;
-            }
+            console.log('[OptionChain] Unsubscribing from live LTP');
+            symbols.forEach(({ symbol, exchange }) => {
+                wsManager.unsubscribe(symbol, exchange);
+            });
             setLiveLTP(new Map());
         };
-    }, [isOpen, optionChain?.chain, underlying.exchange]);
+    }, [isOpen, optionChain?.chain, underlying.symbol, underlying.exchange, underlying.indexExchange]);
 
     // Batch fetch Greeks when view mode changes to 'greeks'
     // Uses single batch API call for much faster loading
@@ -427,7 +422,7 @@ const OptionChainModal = ({ isOpen, onClose, onSelectOption, initialSymbol }) =>
 
         try {
             // Single batch API call instead of many individual calls
-            const response = await getMultiOptionGreeks(symbolsToFetch);
+            const response = await fetchMultiOptionGreeks(symbolsToFetch);
 
             // Check if request is still current
             if (requestId !== greeksRequestIdRef.current) {
@@ -526,7 +521,7 @@ const OptionChainModal = ({ isOpen, onClose, onSelectOption, initialSymbol }) =>
 
         const requestId = greeksRequestIdRef.current;
         try {
-            const response = await getMultiOptionGreeks(missingSymbols);
+            const response = await fetchMultiOptionGreeks(missingSymbols);
 
             if (requestId !== greeksRequestIdRef.current) return;
 

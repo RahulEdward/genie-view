@@ -79,6 +79,12 @@ class InstrumentMaster(Base):
         Index('idx_instrument_symbol', 'symbol'),
         Index('idx_instrument_token', 'token', 'exchange'),
         Index('idx_instrument_search', 'symbol', 'name'),
+        # Composite index for option chain queries (optimized for filtering by multiple fields)
+        Index('idx_option_chain_query', 'name', 'exchange', 'expiry', 'option_type', 'strike'),
+        # Index for expiry filtering
+        Index('idx_instrument_expiry', 'expiry'),
+        # Index for option type filtering
+        Index('idx_instrument_option_type', 'option_type'),
     )
 
 

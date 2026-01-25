@@ -23,6 +23,16 @@ ENDPOINTS = {
     # Search
     "search": "/rest/secure/angelbroking/order/v1/searchScrip",
     
+    # Portfolio & Account
+    "positions": "/rest/secure/angelbroking/order/v1/getPosition",
+    "orders": "/rest/secure/angelbroking/order/v1/getOrderBook",
+    "placeOrder": "/rest/secure/angelbroking/order/v1/placeOrder",
+    "modifyOrder": "/rest/secure/angelbroking/order/v1/modifyOrder",
+    "cancelOrder": "/rest/secure/angelbroking/order/v1/cancelOrder",
+    "funds": "/rest/secure/angelbroking/user/v1/getRMS",
+    "holdings": "/rest/secure/angelbroking/portfolio/v1/getHolding",
+    "tradebook": "/rest/secure/angelbroking/order/v1/getTradeBook",
+    
     # Instrument Master (external URL)
     "instrument_master": "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json",
 }

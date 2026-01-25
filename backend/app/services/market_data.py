@@ -82,6 +82,7 @@ class MarketDataService:
             )
             
             if broker_candles:
+                logger.info(f"Fetched {len(broker_candles)} candles from broker for {range_start} to {range_end}")
                 # Store in database
                 await self._store_candles(symbol, exchange, interval, broker_candles)
                 all_candles.extend(broker_candles)
@@ -155,6 +156,71 @@ class MarketDataService:
                 return cached
             
             raise
+    
+    async def get_quotes_batch(self, symbols: List[Dict[str, str]]) -> Dict[str, Dict]:
+        """
+        Get quotes for multiple symbols with caching.
+        
+        Args:
+            symbols: List of {symbol, exchange} dicts
+        
+        Returns:
+            Dict mapping "SYMBOL:EXCHANGE" to Quote data dict
+        """
+        result = {}
+        missing_symbols = []
+        
+        # Check cache for each symbol
+        for item in symbols:
+            symbol = item["symbol"]
+            exchange = item.get("exchange", "NSE")
+            key = f"{symbol}:{exchange}"
+            
+            cached = await quote_cache.get(key)
+            if cached:
+                result[key] = cached
+            else:
+                missing_symbols.append(item)
+        
+        # Fetch missing from broker
+        if missing_symbols:
+            try:
+                broker_quotes = await self.broker.get_quotes_batch(missing_symbols)
+                
+                for key, quote in broker_quotes.items():
+                    # Calculate change
+                    change = quote.ltp - quote.prev_close
+                    change_percent = (change / quote.prev_close * 100) if quote.prev_close > 0 else 0
+                    
+                    # Extract symbol info from key
+                    parts = key.split(':')
+                    sym = parts[0]
+                    exch = parts[1] if len(parts) > 1 else "NSE"
+                    
+                    data = {
+                        "symbol": sym,
+                        "exchange": exch,
+                        "ltp": quote.ltp,
+                        "open": quote.open,
+                        "high": quote.high,
+                        "low": quote.low,
+                        "prev_close": quote.prev_close,
+                        "volume": quote.volume,
+                        "change": round(change, 2),
+                        "change_percent": round(change_percent, 2)
+                    }
+                    
+                    result[key] = data
+                    
+                    # Cache it
+                    # Extract symbol/exchange from key if possible or match with input
+                    # Key from broker is "SYMBOL:EXCHANGE"
+                    await quote_cache.set(key, data, ttl=5)
+                    
+            except Exception as e:
+                logger.error(f"Batch quote fetch error: {e}")
+        
+        return result
     
     async def get_ltp_batch(self, symbols: List[Dict[str, str]]) -> Dict[str, float]:
         """

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styles from './SettingsPopup.module.css';
-import { X, Eye, EyeOff, Keyboard } from 'lucide-react';
+import { X, Eye, EyeOff, Keyboard, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import ShortcutsSettings from '../ShortcutsSettings/ShortcutsSettings';
 import { LOG_LEVELS, LOG_LEVEL_LABELS, getLogLevel, setLogLevel } from '../../utils/logger';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { useKeyboardNav } from '../../hooks/useKeyboardNav';
+import { testBackendConnection } from '../../services/apiService';
 
 // Default chart appearance for reset
 const DEFAULT_CHART_APPEARANCE = {
@@ -53,6 +54,8 @@ const SettingsPopup = ({
     const [hasChanges, setHasChanges] = useState(false);
     const [showApiKey, setShowApiKey] = useState(false);
     const [localAppearance, setLocalAppearance] = useState(chartAppearance);
+    const [connectionStatus, setConnectionStatus] = useState(null); // 'testing', 'success', 'error', null
+    const [connectionMessage, setConnectionMessage] = useState('');
 
     // Handle cancel - reset local state and close
     const handleCancel = useCallback(() => {
@@ -127,6 +130,32 @@ const SettingsPopup = ({
 
     const handleResetAppearance = () => {
         setLocalAppearance(DEFAULT_CHART_APPEARANCE);
+    };
+
+    const handleTestConnection = async () => {
+        setConnectionStatus('testing');
+        setConnectionMessage('Testing connection...');
+
+        try {
+            const result = await testBackendConnection(localHostUrl);
+            
+            if (result.success) {
+                setConnectionStatus('success');
+                setConnectionMessage(`Connected successfully! Backend version: ${result.version || 'unknown'}`);
+            } else {
+                setConnectionStatus('error');
+                setConnectionMessage(result.message || 'Connection failed');
+            }
+        } catch (error) {
+            setConnectionStatus('error');
+            setConnectionMessage(`Connection failed: ${error.message}`);
+        }
+
+        // Clear status after 5 seconds
+        setTimeout(() => {
+            setConnectionStatus(null);
+            setConnectionMessage('');
+        }, 5000);
     };
 
     const sections = [
@@ -240,20 +269,52 @@ const SettingsPopup = ({
 
                         {activeSection === 'angelalgo' && (
                             <div className={styles.section}>
-                                <h3 className={styles.sectionTitle}>ANGELALGO CONNECTION</h3>
+                                <h3 className={styles.sectionTitle}>BACKEND CONNECTION</h3>
 
                                 <div className={styles.inputGroup}>
-                                    <label className={styles.inputLabel}>Host URL</label>
+                                    <label className={styles.inputLabel}>Backend URL</label>
                                     <input
                                         type="text"
                                         value={localHostUrl}
-                                        onChange={(e) => setLocalHostUrl(e.target.value)}
-                                        placeholder="http://127.0.0.1:8000"
+                                        onChange={(e) => {
+                                            setLocalHostUrl(e.target.value);
+                                            setConnectionStatus(null);
+                                            setConnectionMessage('');
+                                        }}
+                                        placeholder="http://127.0.0.1:5000"
                                         className={styles.input}
                                     />
                                     <p className={styles.inputHint}>
-                                        Default: http://127.0.0.1:8000. Change to use a custom AngelAlgo server URL.
+                                        Backend server URL. Default: http://127.0.0.1:5000
                                     </p>
+                                </div>
+
+                                <div className={styles.inputGroup}>
+                                    <button
+                                        className={styles.testButton}
+                                        onClick={handleTestConnection}
+                                        disabled={connectionStatus === 'testing' || !localHostUrl}
+                                    >
+                                        {connectionStatus === 'testing' ? (
+                                            <>
+                                                <Loader2 size={16} className={styles.spinner} />
+                                                Testing...
+                                            </>
+                                        ) : (
+                                            'Test Connection'
+                                        )}
+                                    </button>
+                                    
+                                    {connectionStatus && connectionStatus !== 'testing' && (
+                                        <div className={`${styles.connectionStatus} ${styles[connectionStatus]}`}>
+                                            {connectionStatus === 'success' ? (
+                                                <CheckCircle size={16} />
+                                            ) : (
+                                                <XCircle size={16} />
+                                            )}
+                                            <span>{connectionMessage}</span>
+                                        </div>
+                                    )}
                                 </div>
 
 
@@ -264,8 +325,9 @@ const SettingsPopup = ({
                                             type={showApiKey ? "text" : "password"}
                                             value={localApiKey}
                                             onChange={(e) => setLocalApiKey(e.target.value)}
-                                            placeholder="Enter your AngelAlgo API key"
+                                            placeholder="Set automatically after broker login"
                                             className={styles.input}
+                                            disabled
                                         />
                                         <button
                                             type="button"
@@ -277,15 +339,7 @@ const SettingsPopup = ({
                                         </button>
                                     </div>
                                     <p className={styles.inputHint}>
-                                        Find your API key in the{' '}
-                                        <a
-                                            href={`${localHostUrl}/apikey`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className={styles.link}
-                                        >
-                                            AngelAlgo Dashboard
-                                        </a>
+                                        API key is set automatically after broker login. Cannot be edited manually.
                                     </p>
                                 </div>
 
@@ -299,21 +353,50 @@ const SettingsPopup = ({
                                         className={styles.input}
                                     />
                                     <p className={styles.inputHint}>
-                                        Default: 127.0.0.1:8765. Change to use a custom domain (e.g., angelalgo.example.com:8765)
+                                        WebSocket server URL for real-time data. Default: 127.0.0.1:8765
                                     </p>
                                 </div>
 
+                                <h3 className={styles.sectionTitle} style={{ marginTop: '24px' }}>WEBSOCKET</h3>
+
                                 <div className={styles.inputGroup}>
-                                    <label className={styles.inputLabel}>AngelAlgo Username</label>
+                                    <label className={styles.inputLabel}>WebSocket URL</label>
                                     <input
                                         type="text"
-                                        value={localUsername}
-                                        onChange={(e) => setLocalUsername(e.target.value)}
-                                        placeholder="Enter your AngelAlgo login username"
+                                        value={localWsUrl}
+                                        onChange={(e) => setLocalWsUrl(e.target.value)}
+                                        placeholder="127.0.0.1:8765"
                                         className={styles.input}
                                     />
                                     <p className={styles.inputHint}>
-                                        Your AngelAlgo login username (NOT Telegram username). Required for Telegram notifications.
+                                        WebSocket server URL for real-time data. Default: 127.0.0.1:8765
+                                    </p>
+                                </div>
+
+                                <h3 className={styles.sectionTitle} style={{ marginTop: '24px' }}>AUTHENTICATION</h3>
+
+                                <div className={styles.inputGroup}>
+                                    <label className={styles.inputLabel}>API Key (Read-only)</label>
+                                    <div className={styles.inputWithIcon}>
+                                        <input
+                                            type={showApiKey ? "text" : "password"}
+                                            value={localApiKey}
+                                            onChange={(e) => setLocalApiKey(e.target.value)}
+                                            placeholder="Set automatically after broker login"
+                                            className={styles.input}
+                                            disabled
+                                        />
+                                        <button
+                                            type="button"
+                                            className={styles.eyeButton}
+                                            onClick={() => setShowApiKey(!showApiKey)}
+                                            title={showApiKey ? "Hide API key" : "Show API key"}
+                                        >
+                                            {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                                        </button>
+                                    </div>
+                                    <p className={styles.inputHint}>
+                                        API key is set automatically after broker login. Cannot be edited manually.
                                     </p>
                                 </div>
                             </div>

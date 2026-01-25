@@ -51,28 +51,53 @@ async def create_tables():
 
 async def init_instrument_master():
     """
-    Initialize instrument master data.
-    Downloads and stores instrument data from broker.
+    Initialize instrument master data on startup.
+    
+    Downloads and stores instrument data from broker with retry logic.
+    Implements 3 retry attempts with exponential backoff (1s, 2s, 4s).
+    Continues startup even if all retries fail.
     """
     logger.info("Initializing instrument master...")
     
-    try:
-        # Get broker adapter
-        broker = get_broker()
-        
-        # Create symbol service
-        from app.db.session import async_session
-        async with async_session() as db:
-            symbol_service = SymbolService(broker, db)
+    max_retries = 3
+    retry_delays = [1, 2, 4]  # Exponential backoff
+    
+    for attempt in range(max_retries):
+        try:
+            # Create a dummy broker (not needed for download, but required for SymbolService)
+            # The download_instrument_master() method doesn't use the broker
+            from app.brokers.angelone.adapter import AngelOneAdapter
+            broker = AngelOneAdapter(api_key="dummy")  # API key not needed for instrument master download
             
-            # Refresh instrument master
-            count = await symbol_service.refresh_master()
+            # Create symbol service with database session
+            from app.db.session import async_session_maker
+            async with async_session_maker() as db:
+                symbol_service = SymbolService(broker, db)
+                
+                # Refresh instrument master (force=True to ensure download)
+                logger.info(f"Downloading instrument master (attempt {attempt + 1}/{max_retries})...")
+                count = await symbol_service.refresh_master(force=True)
+                
+                if count > 0:
+                    logger.info(f"Successfully loaded {count} instruments into master")
+                    return  # Success - exit function
+                else:
+                    logger.warning(f"No instruments loaded on attempt {attempt + 1}")
+                    
+        except Exception as e:
+            logger.error(f"Instrument master init attempt {attempt + 1} failed: {e}")
             
-            logger.info(f"Loaded {count} instruments into master")
-            
-    except Exception as e:
-        logger.warning(f"Instrument master init failed: {e}")
-        logger.info("Instrument master will be loaded on first API call")
+            if attempt < max_retries - 1:
+                delay = retry_delays[attempt]
+                logger.info(f"Retrying in {delay} seconds...")
+                await asyncio.sleep(delay)
+            else:
+                logger.critical(
+                    "Failed to initialize instrument master after all retries. "
+                    "Option chain functionality may be limited. "
+                    "Continuing startup..."
+                )
+                return  # Continue startup even after all failures
 
 
 async def init_redis_connection():

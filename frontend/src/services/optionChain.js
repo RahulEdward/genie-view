@@ -1,9 +1,11 @@
 /**
  * Option Chain Service
- * Handles option chain fetching using AngelAlgo Option Chain API
+ * Handles option chain fetching using backend API
+ * Updated to use unified backend API service
  */
 
-import { getOptionChain as fetchOptionChainAPI, getOptionGreeks, getMultiOptionGreeks, getKlines, searchSymbols, getExpiry, fetchExpiryDates } from './angelalgo';
+import { callBackendAPI } from './apiService';
+import logger from '../utils/logger';
 
 // ==================== OPTION CHAIN CACHE ====================
 // Cache to reduce API calls and avoid Upstox rate limits (30 req/min)
@@ -261,10 +263,10 @@ export const formatExpiryTab = (expiryStr, index) => {
 };
 
 /**
- * Get option chain for an underlying using AngelAlgo Option Chain API
- * Uses caching to reduce API calls and avoid Upstox rate limits
+ * Get option chain for an underlying using backend API
+ * Uses caching to reduce API calls
  * @param {string} underlying - Underlying symbol (NIFTY, BANKNIFTY)
- * @param {string} exchange - Exchange (NFO, BFO) - will be converted to index exchange for API
+ * @param {string} exchange - Exchange (NFO, BFO)
  * @param {string} expiryDate - Optional expiry date in DDMMMYY format
  * @param {number} strikeCount - Number of strikes above/below ATM (default 15)
  * @param {boolean} forceRefresh - Skip cache and fetch fresh data
@@ -273,7 +275,7 @@ export const formatExpiryTab = (expiryStr, index) => {
 export const getOptionChain = async (underlying, exchange = 'NFO', expiryDate = null, strikeCount = 15, forceRefresh = false) => {
     // Check if symbol is known to not support F&O (negative cache)
     if (isNonFOSymbol(underlying)) {
-        console.log('[OptionChain] Symbol known to not support F&O:', underlying);
+        logger.warn('[OptionChain] Symbol known to not support F&O:', underlying);
         const error = new Error(`${underlying} does not support F&O trading`);
         error.code = 'NO_FO_SUPPORT';
         throw error;
@@ -284,7 +286,7 @@ export const getOptionChain = async (underlying, exchange = 'NFO', expiryDate = 
 
     // Return cached data if valid and not forcing refresh
     if (!forceRefresh && isCacheValid(cached)) {
-        console.log('[OptionChain] Using cached data for:', cacheKey, '(age:', Math.round((Date.now() - cached.timestamp) / 1000), 's)');
+        logger.debug('[OptionChain] Using cached data for:', cacheKey);
         return cached.data;
     }
 
@@ -292,11 +294,11 @@ export const getOptionChain = async (underlying, exchange = 'NFO', expiryDate = 
     const timeSinceLastCall = Date.now() - lastApiCallTime;
     if (timeSinceLastCall < MIN_API_INTERVAL_MS) {
         const waitTime = MIN_API_INTERVAL_MS - timeSinceLastCall;
-        console.log('[OptionChain] Rate limit protection: waiting', waitTime, 'ms before API call');
+        logger.debug('[OptionChain] Rate limit protection: waiting', waitTime, 'ms');
 
         // If we have stale cache, return it instead of waiting
         if (cached) {
-            console.log('[OptionChain] Using stale cache to avoid rate limit');
+            logger.debug('[OptionChain] Using stale cache to avoid rate limit');
             return cached.data;
         }
 
@@ -305,39 +307,33 @@ export const getOptionChain = async (underlying, exchange = 'NFO', expiryDate = 
     }
 
     try {
-        // Find the underlying config to get correct index exchange (for underlying price lookup)
-        // For known indices (NIFTY, BANKNIFTY), use their indexExchange (NSE_INDEX/BSE_INDEX)
-        // For stocks (not in UNDERLYINGS), use 'NSE' or 'BSE' directly
-        const underlyingConfig = UNDERLYINGS.find(u => u.symbol === underlying);
-        const indexExchange = underlyingConfig?.indexExchange || (exchange === 'BFO' ? 'BSE' : 'NSE');
-
-        // The option chain API expects the F&O exchange (NFO/BFO), not the underlying exchange
-        // The 'exchange' parameter passed to this function should already be NFO or BFO
-        const optionExchange = exchange; // NFO or BFO
-
-        console.log('[OptionChain] Fetching fresh chain:', { underlying, optionExchange, indexExchange, expiryDate, strikeCount });
+        logger.debug('[OptionChain] Fetching fresh chain:', { underlying, exchange, expiryDate, strikeCount });
 
         // Update last API call time
         lastApiCallTime = Date.now();
 
-        // Call AngelAlgo Option Chain API with the F&O exchange (NFO/BFO)
-        const result = await fetchOptionChainAPI(underlying, optionExchange, expiryDate, strikeCount);
+        // Call backend Option Chain API
+        const result = await callBackendAPI('/optionchain', {
+            underlying,
+            exchange,
+            expiry: expiryDate,
+            strike_count: strikeCount
+        });
 
         if (!result) {
-            console.error('[OptionChain] API returned null');
+            logger.error('[OptionChain] API returned null');
 
             // Use stale cache if available (better than empty data)
             if (cached) {
-                console.log('[OptionChain] API returned null, using stale cache for:', cacheKey);
+                logger.warn('[OptionChain] API returned null, using stale cache');
                 return cached.data;
             }
 
-            // No cache available - throw error so component shows correct message
-            throw new Error('Option chain API unavailable (rate limit)');
+            // No cache available - throw error
+            throw new Error('Option chain API unavailable');
         }
 
         // Transform chain data to our format
-        // API returns: { strike, ce: { symbol, label, ltp, bid, ask, oi, volume, ... }, pe: { ... } }
         const chain = (result.chain || []).map(row => ({
             strike: parseFloat(row.strike),
             ce: row.ce ? {
@@ -369,7 +365,7 @@ export const getOptionChain = async (underlying, exchange = 'NFO', expiryDate = 
                 lotSize: parseInt(row.pe.lotsize || row.pe.lot_size || 0)
             } : null,
             straddlePremium: (parseFloat(row.ce?.ltp || 0) + parseFloat(row.pe?.ltp || 0)).toFixed(2)
-        }))
+        }));
 
         // Parse expiry date for display
         const expiryDateObj = parseExpiryDate(result.expiryDate);
@@ -408,12 +404,12 @@ export const getOptionChain = async (underlying, exchange = 'NFO', expiryDate = 
                 timestamp: Date.now()
             });
             saveCacheToStorage(); // Persist to localStorage
-            console.log('[OptionChain] Cached data for:', cacheKey);
+            logger.debug('[OptionChain] Cached data for:', cacheKey);
         }
 
         return processedData;
     } catch (error) {
-        console.error('[OptionChain] Error fetching option chain:', error);
+        logger.error('[OptionChain] Error fetching option chain:', error.message);
 
         // If symbol doesn't support F&O, add to negative cache and re-throw
         if (error.code === 'NO_FO_SUPPORT') {
@@ -423,7 +419,7 @@ export const getOptionChain = async (underlying, exchange = 'NFO', expiryDate = 
 
         // On error, return stale cache if available (better than nothing)
         if (cached) {
-            console.log('[OptionChain] API error, returning stale cache for:', cacheKey);
+            logger.warn('[OptionChain] API error, returning stale cache');
             return cached.data;
         }
 
@@ -487,8 +483,8 @@ const saveExpiryCacheToStorage = () => {
 loadExpiryCacheFromStorage();
 
 /**
- * Get available expiries for an underlying using the dedicated Expiry API
- * Uses caching to reduce API calls with fallback to symbol parsing
+ * Get available expiries for an underlying using backend API
+ * Uses caching to reduce API calls
  * @param {string} underlying - Underlying symbol (e.g., NIFTY, BANKNIFTY, RELIANCE, GOLD)
  * @param {string} exchange - Exchange for the options (NFO, BFO, MCX) - defaults based on underlying
  * @param {string} instrumenttype - Type: 'futures' or 'options' (default: 'options')
@@ -497,9 +493,6 @@ loadExpiryCacheFromStorage();
 export const getAvailableExpiries = async (underlying, exchange = null, instrumenttype = 'options') => {
     try {
         // Determine the correct exchange for F&O based on the underlying
-        // NSE underlyings (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY, stocks) -> NFO
-        // BSE underlyings (SENSEX, BANKEX) -> BFO  
-        // MCX underlyings (GOLD, SILVER, CRUDE) -> MCX
         let foExchange = exchange;
         if (!foExchange) {
             const underlyingConfig = UNDERLYINGS.find(u => u.symbol === underlying);
@@ -516,25 +509,22 @@ export const getAvailableExpiries = async (underlying, exchange = null, instrume
         const cached = expiryCache.get(cacheKey);
 
         if (isExpiryCacheValid(cached)) {
-            console.log('[OptionChain] Using cached expiries for:', cacheKey, '(age:', Math.round((Date.now() - cached.timestamp) / 1000), 's)');
+            logger.debug('[OptionChain] Using cached expiries for:', cacheKey);
             return cached.data;
         }
 
-        console.log('[OptionChain] Fetching expiries for', underlying, 'on', foExchange);
+        logger.debug('[OptionChain] Fetching expiries for', underlying, 'on', foExchange);
 
-        // Try the dedicated expiry API first (fetchExpiryDates)
-        let expiryDates = await fetchExpiryDates(underlying, foExchange, instrumenttype);
+        // Call backend Expiry API
+        const expiryDates = await callBackendAPI('/expiry', {
+            underlying,
+            exchange: foExchange,
+            instrumenttype
+        });
 
-        // Fallback to getExpiry if fetchExpiryDates returns empty
         if (!expiryDates || expiryDates.length === 0) {
-            console.log('[OptionChain] fetchExpiryDates returned empty, trying getExpiry for', underlying);
-            expiryDates = await getExpiry(underlying, foExchange, instrumenttype);
-        }
-
-        // Final fallback: Parse symbols to extract unique expiries
-        if (!expiryDates || expiryDates.length === 0) {
-            console.log('[OptionChain] Expiry APIs returned empty, falling back to symbol parsing for', underlying);
-            return await getExpiriesFromSymbolSearch(underlying);
+            logger.warn('[OptionChain] No expiries returned for', underlying);
+            return [];
         }
 
         // Convert from API format (DD-MMM-YY like "10-JUL-25") to our internal format (DDMMMYY like "10JUL25")
@@ -550,18 +540,12 @@ export const getAvailableExpiries = async (underlying, exchange = null, instrume
             timestamp: Date.now()
         });
         saveExpiryCacheToStorage();
-        console.log('[OptionChain] Cached expiries for:', cacheKey);
+        logger.debug('[OptionChain] Cached expiries for:', cacheKey);
 
         return expiries;
     } catch (error) {
-        console.error('[OptionChain] Error getting expiries:', error);
-        // Try fallback to symbol search
-        try {
-            return await getExpiriesFromSymbolSearch(underlying);
-        } catch (fallbackError) {
-            console.error('[OptionChain] Fallback symbol search also failed:', fallbackError);
-            return [];
-        }
+        logger.error('[OptionChain] Error getting expiries:', error.message);
+        return [];
     }
 };
 
@@ -604,24 +588,36 @@ const getExpiriesFromSymbolSearch = async (underlying) => {
 };
 
 /**
- * Get option greeks for a symbol
+ * Get option greeks for a symbol using backend API
  * @param {string} symbol - Option symbol
  * @param {string} exchange - Exchange (NFO, BFO)
  * @returns {Promise<Object|null>} Greeks data or null
  */
 export const fetchOptionGreeks = async (symbol, exchange = 'NFO') => {
-    return await getOptionGreeks(symbol, exchange);
+    try {
+        const data = await callBackendAPI('/greeks', { symbol, exchange });
+        return data;
+    } catch (error) {
+        logger.error('[OptionChain] Greeks error:', error.message);
+        return null;
+    }
 };
 
 /**
- * Get option greeks for multiple symbols in a single batch request
+ * Get option greeks for multiple symbols in a single batch request using backend API
  * Much faster than individual calls - processes up to 50 symbols at once
  * @param {Array<{symbol: string, exchange: string}>} symbols - Array of option symbols
  * @param {Object} options - Optional parameters (interest_rate, expiry_time)
  * @returns {Promise<Object>} Response with data array and summary
  */
 export const fetchMultiOptionGreeks = async (symbols, options = {}) => {
-    return await getMultiOptionGreeks(symbols, options);
+    try {
+        const data = await callBackendAPI('/greeks/batch', { symbols, ...options });
+        return data;
+    } catch (error) {
+        logger.error('[OptionChain] Batch Greeks error:', error.message);
+        return { data: [], summary: {} };
+    }
 };
 
 /**

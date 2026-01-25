@@ -11,6 +11,8 @@ import SnapshotToast from './components/Toast/SnapshotToast';
 import html2canvas from 'html2canvas';
 import { getTickerPrice, subscribeToMultiTicker, checkAuth, closeAllWebSockets, forceCloseAllWebSockets, saveUserPreferences, modifyOrder, cancelOrder } from './services/angelalgo';
 import { globalAlertMonitor } from './services/globalAlertMonitor';
+import { getBatchQuotes } from './services/marketDataService';
+import { wsManager } from './services/websocketManager';
 
 import BottomBar from './components/BottomBar/BottomBar';
 import ChartGrid from './components/Chart/ChartGrid';
@@ -1032,17 +1034,24 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
         exchange = symObj.exchange || 'NSE';
       }
 
-      const data = await getTickerPrice(symbol, exchange, abortController.signal);
-      if (data && mounted) {
-        return {
-          symbol, exchange,
-          last: parseFloat(data.lastPrice).toFixed(2),
-          open: data.open || 0,
-          chg: parseFloat(data.priceChange).toFixed(2),
-          chgP: parseFloat(data.priceChangePercent).toFixed(2) + '%',
-          volume: data.volume || 0,
-          up: parseFloat(data.priceChange) >= 0
-        };
+      // Use new backend service for quotes
+      try {
+        const data = await getBatchQuotes([{ symbol, exchange }]);
+        if (data && data.length > 0 && mounted) {
+          const quote = data[0];
+          return {
+            symbol,
+            exchange,
+            last: parseFloat(quote.ltp || quote.lastPrice || 0).toFixed(2),
+            open: quote.open || 0,
+            chg: parseFloat(quote.change || quote.priceChange || 0).toFixed(2),
+            chgP: parseFloat(quote.change_percent || quote.priceChangePercent || 0).toFixed(2) + '%',
+            volume: quote.volume || 0,
+            up: parseFloat(quote.change || quote.priceChange || 0) >= 0
+          };
+        }
+      } catch (error) {
+        logger.error('[Watchlist] Error fetching symbol:', symbol, error);
       }
       return null;
     };
@@ -1080,16 +1089,41 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
           logger.debug('[Watchlist] Displayed cached data, now fetching fresh prices...');
         }
 
-        // ALWAYS fetch fresh prices from API for ALL symbols
+        // ALWAYS fetch fresh prices from API for ALL symbols in ONE batch call
         console.log('Fetching fresh quotes for', symbolObjs.length, 'symbols');
         logger.debug('[Watchlist] Fetching fresh quotes for all', symbolObjs.length, 'symbols');
-        const fetchPromises = symbolObjs.map(fetchSymbol);
-        const results = await Promise.all(fetchPromises);
-        const validResults = results.filter(r => r !== null);
+
+        // Prepare batch request
+        const batchParams = symbolObjs.map(s => ({
+          symbol: typeof s === 'string' ? s : s.symbol,
+          exchange: typeof s === 'string' ? 'NSE' : (s.exchange || 'NSE')
+        }));
+
+        const quotes = await getBatchQuotes(batchParams);
+
+        // Map results back to watchlist format
+        const validResults = quotes.map(quote => {
+          if (!quote) return null;
+
+          // Find original symbol object to preserve properties if needed
+          // But quote data should have symbol/exchange
+          return {
+            symbol: quote.symbol || quote.tradingSymbol,
+            exchange: quote.exchange,
+            last: parseFloat(quote.ltp || quote.lastPrice || 0).toFixed(2),
+            open: quote.open || 0,
+            chg: parseFloat(quote.change || quote.priceChange || 0).toFixed(2),
+            chgP: parseFloat(quote.change_percent || quote.priceChangePercent || 0).toFixed(2) + '%',
+            volume: quote.volume || 0,
+            up: parseFloat(quote.change || quote.priceChange || 0) >= 0
+          };
+        }).filter(r => r !== null);
 
         console.log('=== API RESULTS ===');
-        console.log('Total results:', results.length, 'Valid results:', validResults.length);
-        console.log('Sample result:', validResults[0]);
+        console.log('Total fetched:', quotes.length, 'Valid mapped:', validResults.length);
+        if (validResults.length > 0) {
+          console.log('Sample result:', validResults[0]);
+        }
         logger.debug('[Watchlist] Fresh quotes received:', validResults.length);
 
         if (mounted && validResults.length > 0) {
@@ -1103,10 +1137,6 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
         if (mounted) {
           setWatchlistLoading(false);
           initialDataLoaded = true;
-
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.close();
-          }
 
           // === MERGE alert symbols with watchlist symbols ===
           // Get symbols with active alerts that aren't already in watchlist
@@ -1125,141 +1155,156 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
           console.log('Additional alert symbols:', additionalAlertSymbols.length);
           console.log('Total subscribed:', allSymbolsToSubscribe.length);
 
-          ws = subscribeToMultiTicker(allSymbolsToSubscribe, (ticker) => {
-            if (!mounted || !initialDataLoaded) return;
+          // Use new WebSocket manager for subscriptions
+          allSymbolsToSubscribe.forEach(symObj => {
+            const symbol = typeof symObj === 'string' ? symObj : symObj.symbol;
+            const exchange = typeof symObj === 'string' ? 'NSE' : (symObj.exchange || 'NSE');
 
-            // === ALERT MONITORING: Check chart alerts with proper crossing detection ===
-            try {
-              const chartAlertsStr = localStorage.getItem('tv_chart_alerts');
-              if (chartAlertsStr) {
-                const chartAlertsData = JSON.parse(chartAlertsStr);
-                const alertKey = `${ticker.symbol}:${ticker.exchange || 'NSE'}`;
-                const symbolAlerts = chartAlertsData[alertKey] || [];
+            wsManager.subscribe(symbol, exchange, (ticker) => {
+              if (!mounted || !initialDataLoaded) return;
 
-                const currentPrice = parseFloat(ticker.last);
-                if (!Number.isFinite(currentPrice)) return;
+              // === ALERT MONITORING: Check chart alerts with proper crossing detection ===
+              try {
+                const chartAlertsStr = localStorage.getItem('tv_chart_alerts');
+                if (chartAlertsStr) {
+                  const chartAlertsData = JSON.parse(chartAlertsStr);
+                  const alertKey = `${ticker.symbol || symbol}:${ticker.exchange || exchange}`;
+                  const symbolAlerts = chartAlertsData[alertKey] || [];
 
-                // Get previous price for this symbol (for crossing detection)
-                const prevPrice = alertPricesRef.current.get(alertKey);
-                alertPricesRef.current.set(alertKey, currentPrice);
+                  const currentPrice = parseFloat(ticker.ltp || ticker.last);
+                  if (!Number.isFinite(currentPrice)) return;
 
-                // Skip first tick (no previous price to compare)
-                if (prevPrice === undefined) return;
+                  // Get previous price for this symbol (for crossing detection)
+                  const prevPrice = alertPricesRef.current.get(alertKey);
+                  alertPricesRef.current.set(alertKey, currentPrice);
 
-                for (const alert of symbolAlerts) {
-                  if (!alert.price || alert.triggered) continue;
+                  // Skip first tick (no previous price to compare)
+                  if (prevPrice === undefined) return;
 
-                  const alertPrice = parseFloat(alert.price);
-                  if (!Number.isFinite(alertPrice)) continue;
+                  for (const alert of symbolAlerts) {
+                    if (!alert.price || alert.triggered) continue;
 
-                  const condition = alert.condition || 'crossing';
-                  let triggered = false;
-                  let direction = '';
+                    const alertPrice = parseFloat(alert.price);
+                    if (!Number.isFinite(alertPrice)) continue;
 
-                  // Proper crossing detection
-                  const crossedUp = prevPrice < alertPrice && currentPrice >= alertPrice;
-                  const crossedDown = prevPrice > alertPrice && currentPrice <= alertPrice;
+                    const condition = alert.condition || 'crossing';
+                    let triggered = false;
+                    let direction = '';
 
-                  if (condition === 'crossing') {
-                    triggered = crossedUp || crossedDown;
-                    direction = crossedUp ? 'up' : 'down';
-                  } else if (condition === 'crossing_up') {
-                    triggered = crossedUp;
-                    direction = 'up';
-                  } else if (condition === 'crossing_down') {
-                    triggered = crossedDown;
-                    direction = 'down';
-                  }
+                    // Proper crossing detection
+                    const crossedUp = prevPrice < alertPrice && currentPrice >= alertPrice;
+                    const crossedDown = prevPrice > alertPrice && currentPrice <= alertPrice;
 
-                  if (triggered) {
-                    console.log('[Alerts] TRIGGERED:', ticker.symbol, 'crossed', direction, 'at', currentPrice, 'target:', alertPrice);
-
-                    // Mark as triggered in localStorage
-                    alert.triggered = true;
-                    chartAlertsData[alertKey] = symbolAlerts;
-                    localStorage.setItem('tv_chart_alerts', JSON.stringify(chartAlertsData));
-
-                    // Play alarm sound
-                    playAlertSound();
-
-                    // Only show GlobalAlertPopup if NOT on the same chart
-                    // (Chart's own AlertNotification handles same-chart alerts)
-                    const isOnCurrentChart =
-                      ticker.symbol === activeChartRef.current.symbol &&
-                      (ticker.exchange || 'NSE') === activeChartRef.current.exchange;
-
-                    if (!isOnCurrentChart) {
-                      // Add to global alert popup (for background alerts)
-                      setGlobalAlertPopups(prev => [{
-                        id: `popup-${Date.now()}-${alert.id}`,
-                        alertId: alert.id,
-                        symbol: ticker.symbol,
-                        exchange: ticker.exchange || 'NSE',
-                        price: alertPrice.toFixed(2),
-                        direction: direction,
-                        timestamp: Date.now()
-                      }, ...prev].slice(0, 5)); // Max 5 popups
+                    if (condition === 'crossing') {
+                      triggered = crossedUp || crossedDown;
+                      direction = crossedUp ? 'up' : 'down';
+                    } else if (condition === 'crossing_up') {
+                      triggered = crossedUp;
+                      direction = 'up';
+                    } else if (condition === 'crossing_down') {
+                      triggered = crossedDown;
+                      direction = 'down';
                     }
 
-                    // Log entry
-                    setAlertLogs(prev => [{
-                      id: Date.now(),
-                      alertId: alert.id,
-                      symbol: ticker.symbol,
-                      exchange: ticker.exchange || 'NSE',
-                      message: `Alert: ${ticker.symbol} crossed ${direction} ${alertPrice.toFixed(2)}`,
-                      time: new Date().toISOString()
-                    }, ...prev]);
-                    setUnreadAlertCount(prev => prev + 1);
+                    if (triggered) {
+                      console.log('[Alerts] TRIGGERED:', ticker.symbol || symbol, 'crossed', direction, 'at', currentPrice, 'target:', alertPrice);
+
+                      // Mark as triggered in localStorage
+                      alert.triggered = true;
+                      chartAlertsData[alertKey] = symbolAlerts;
+                      localStorage.setItem('tv_chart_alerts', JSON.stringify(chartAlertsData));
+
+                      // Play alarm sound
+                      playAlertSound();
+
+                      // Only show GlobalAlertPopup if NOT on the same chart
+                      // (Chart's own AlertNotification handles same-chart alerts)
+                      const isOnCurrentChart =
+                        (ticker.symbol || symbol) === activeChartRef.current.symbol &&
+                        (ticker.exchange || exchange) === activeChartRef.current.exchange;
+
+                      if (!isOnCurrentChart) {
+                        // Add to global alert popup (for background alerts)
+                        setGlobalAlertPopups(prev => [{
+                          id: `popup-${Date.now()}-${alert.id}`,
+                          alertId: alert.id,
+                          symbol: ticker.symbol || symbol,
+                          exchange: ticker.exchange || exchange,
+                          price: alertPrice.toFixed(2),
+                          direction: direction,
+                          timestamp: Date.now()
+                        }, ...prev].slice(0, 5)); // Max 5 popups
+                      }
+
+                      // Log entry
+                      setAlertLogs(prev => [{
+                        id: Date.now(),
+                        alertId: alert.id,
+                        symbol: ticker.symbol || symbol,
+                        exchange: ticker.exchange || exchange,
+                        message: `Alert: ${ticker.symbol || symbol} crossed ${direction} ${alertPrice.toFixed(2)}`,
+                        time: new Date().toISOString()
+                      }, ...prev]);
+                      setUnreadAlertCount(prev => prev + 1);
+                    }
                   }
                 }
+              } catch (err) {
+                // Silent fail for alert check
               }
-            } catch (err) {
-              // Silent fail for alert check
-            }
 
-            // === Original watchlist update logic ===
-            setWatchlistData(prev => {
-              // Match by both symbol AND exchange for correct updates
-              const tickerExchange = ticker.exchange || 'NSE';
-              const index = prev.findIndex(item =>
-                item.symbol === ticker.symbol && item.exchange === tickerExchange
-              );
-              if (index !== -1) {
-                const newData = [...prev];
-                newData[index] = {
-                  ...newData[index],
-                  last: ticker.last.toFixed(2),
-                  open: ticker.open,
-                  volume: ticker.volume,
-                  chg: ticker.chg.toFixed(2),
-                  chgP: ticker.chgP.toFixed(2) + '%',
-                  up: ticker.chg >= 0
-                };
-                return newData;
-              }
-              // Fallback: Create item from WebSocket data if quotes API failed
-              // Use ref to avoid stale closure - watchlistSymbols changes but callback stays same
-              // Match by both symbol AND exchange
-              const symbolData = watchlistSymbolsRef.current.find(s => {
-                if (typeof s === 'string') return s === ticker.symbol;
-                return s.symbol === ticker.symbol && s.exchange === tickerExchange;
+              // === Original watchlist update logic ===
+              setWatchlistData(prev => {
+                // Match by both symbol AND exchange for correct updates
+                const tickerSymbol = ticker.symbol || symbol;
+                const tickerExchange = ticker.exchange || exchange;
+                const index = prev.findIndex(item =>
+                  item.symbol === tickerSymbol && item.exchange === tickerExchange
+                );
+                if (index !== -1) {
+                  const newData = [...prev];
+                  const ltp = ticker.ltp || ticker.last || 0;
+                  const change = ticker.change || ticker.chg || 0;
+                  const changePercent = ticker.change_percent || ticker.chgP || 0;
+
+                  newData[index] = {
+                    ...newData[index],
+                    last: parseFloat(ltp).toFixed(2),
+                    open: ticker.open || newData[index].open || 0,
+                    volume: ticker.volume || newData[index].volume || 0,
+                    chg: parseFloat(change).toFixed(2),
+                    chgP: parseFloat(changePercent).toFixed(2) + '%',
+                    up: parseFloat(change) >= 0
+                  };
+                  return newData;
+                }
+                // Fallback: Create item from WebSocket data if quotes API failed
+                // Use ref to avoid stale closure - watchlistSymbols changes but callback stays same
+                // Match by both symbol AND exchange
+                const symbolData = watchlistSymbolsRef.current.find(s => {
+                  if (typeof s === 'string') return s === tickerSymbol;
+                  return s.symbol === tickerSymbol && s.exchange === tickerExchange;
+                });
+                if (symbolData) {
+                  console.log('=== WEBSOCKET FALLBACK: Adding', tickerSymbol, '===');
+                  const ltp = ticker.ltp || ticker.last || 0;
+                  const change = ticker.change || ticker.chg || 0;
+                  const changePercent = ticker.change_percent || ticker.chgP || 0;
+
+                  return [...prev, {
+                    symbol: tickerSymbol,
+                    exchange: tickerExchange,
+                    last: parseFloat(ltp).toFixed(2),
+                    open: ticker.open || 0,
+                    volume: ticker.volume || 0,
+                    chg: parseFloat(change).toFixed(2),
+                    chgP: parseFloat(changePercent).toFixed(2) + '%',
+                    up: parseFloat(change) >= 0
+                  }];
+                }
+                return prev;
               });
-              if (symbolData) {
-                console.log('=== WEBSOCKET FALLBACK: Adding', ticker.symbol, '===');
-                return [...prev, {
-                  symbol: ticker.symbol,
-                  exchange: tickerExchange,
-                  last: ticker.last.toFixed(2),
-                  open: ticker.open,
-                  volume: ticker.volume,
-                  chg: ticker.chg.toFixed(2),
-                  chgP: ticker.chgP.toFixed(2) + '%',
-                  up: ticker.chg >= 0
-                }];
-              }
-              return prev;
-            });
+            }, 2); // mode 2 = Quote mode
           });
         }
       } catch (error) {
@@ -1297,6 +1342,39 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
 
       if (mounted && validResults.length > 0) {
         setWatchlistData(prev => [...prev, ...validResults]);
+
+        // Subscribe to new symbols via WebSocket
+        validResults.forEach(result => {
+          wsManager.subscribe(result.symbol, result.exchange, (ticker) => {
+            if (!mounted || !initialDataLoaded) return;
+
+            setWatchlistData(prev => {
+              const tickerSymbol = ticker.symbol || result.symbol;
+              const tickerExchange = ticker.exchange || result.exchange;
+              const index = prev.findIndex(item =>
+                item.symbol === tickerSymbol && item.exchange === tickerExchange
+              );
+              if (index !== -1) {
+                const newData = [...prev];
+                const ltp = ticker.ltp || ticker.last || 0;
+                const change = ticker.change || ticker.chg || 0;
+                const changePercent = ticker.change_percent || ticker.chgP || 0;
+
+                newData[index] = {
+                  ...newData[index],
+                  last: parseFloat(ltp).toFixed(2),
+                  open: ticker.open || newData[index].open || 0,
+                  volume: ticker.volume || newData[index].volume || 0,
+                  chg: parseFloat(change).toFixed(2),
+                  chgP: parseFloat(changePercent).toFixed(2) + '%',
+                  up: parseFloat(change) >= 0
+                };
+                return newData;
+              }
+              return prev;
+            });
+          }, 2);
+        });
       }
     };
 
@@ -1323,6 +1401,13 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
           const itemKey = `${item.symbol}-${item.exchange || 'NSE'}`;
           return !removedSymbolKeys.includes(itemKey);
         }));
+
+        // Unsubscribe from removed symbols
+        removedSymbolKeys.forEach(key => {
+          const [symbol, exchange] = key.split('-');
+          // Note: wsManager handles unsubscription internally when no more callbacks exist
+          // We don't need to explicitly unsubscribe here as the callbacks are tied to the effect lifecycle
+        });
       }
       if (addedSymbolKeys.length > 0) {
         hydrateAddedSymbols();
@@ -1336,9 +1421,7 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
       mounted = false;
       abortController.abort();
       watchlistFetchingRef.current = false;
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.close();
-      }
+      // Note: wsManager handles cleanup internally, subscriptions are managed per-callback
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchlistSymbolsKey, watchlistsState.activeListId, isAuthenticated]);
@@ -2792,6 +2875,9 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
       // Also update the apiKey state so Settings dialog reflects the entered key
       setApiKey(newApiKey);
       setIsAuthenticated(true);
+
+      // Connect WebSocket after successful login
+      wsManager.connect();
     };
 
     return (

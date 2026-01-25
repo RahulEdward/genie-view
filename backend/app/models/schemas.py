@@ -85,6 +85,11 @@ class SavedCredentialsResponse(BaseResponse):
     data: List[Dict[str, str]]  # List of {broker, client_id}
 
 
+class VerifyRequest(BaseModel):
+    """Session verification request"""
+    apikey: str
+
+
 # ==================== Market Data Schemas ====================
 
 class HistoryRequest(BaseModel):
@@ -121,6 +126,8 @@ class QuoteRequest(BaseModel):
 
 class QuoteData(BaseModel):
     """Quote data"""
+    symbol: Optional[str] = None
+    exchange: Optional[str] = None
     ltp: float
     open: float
     high: float
@@ -134,6 +141,17 @@ class QuoteData(BaseModel):
 class QuoteResponse(BaseResponse):
     """Quote response"""
     data: QuoteData
+
+
+class BatchQuoteRequest(BaseModel):
+    """Batch formatted quote request"""
+    apikey: str
+    symbols: List[Dict[str, str]]  # [{"symbol": "RELIANCE", "exchange": "NSE"}]
+
+
+class QuoteBatchResponse(BaseResponse):
+    """Batch quote response"""
+    data: Dict[str, QuoteData]  # "SYMBOL:EXCHANGE": QuoteData
 
 
 # ==================== Option Chain Schemas ====================

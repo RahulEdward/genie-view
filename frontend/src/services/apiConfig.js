@@ -5,8 +5,8 @@
 
 import { getString, STORAGE_KEYS } from './storageService';
 
-const DEFAULT_HOST = 'http://127.0.0.1:5000';
-const DEFAULT_WS_HOST = '127.0.0.1:8765';
+const DEFAULT_HOST = 'http://127.0.0.1:8000';
+const DEFAULT_WS_HOST = '127.0.0.1:8000';
 
 /**
  * Get Host URL from localStorage settings or use default
@@ -22,7 +22,7 @@ export const getHostUrl = () => {
 export const shouldUseProxy = () => {
     const hostUrl = getHostUrl();
     // Use proxy when host is default localhost and we're running on localhost
-    const isDefaultHost = hostUrl === DEFAULT_HOST || hostUrl === 'http://localhost:5000' || hostUrl === 'http://127.0.0.1:5000';
+    const isDefaultHost = hostUrl === DEFAULT_HOST || hostUrl === 'http://localhost:8000' || hostUrl === 'http://127.0.0.1:8000';
     const isLocalDev = typeof window !== 'undefined' &&
         (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
     return isDefaultHost && isLocalDev;
@@ -56,7 +56,7 @@ export const getWebSocketUrl = () => {
     const wsHost = getString(STORAGE_KEYS.OA_WS_URL, DEFAULT_WS_HOST);
 
     // Check if we're in local development with default WebSocket host
-    const isDefaultWsHost = wsHost === DEFAULT_WS_HOST || wsHost === '127.0.0.1:8765' || wsHost === 'localhost:8765';
+    const isDefaultWsHost = wsHost === DEFAULT_WS_HOST || wsHost === '127.0.0.1:8000' || wsHost === 'localhost:8000';
     const isLocalDev = typeof window !== 'undefined' &&
         (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 

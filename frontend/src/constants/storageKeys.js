@@ -4,12 +4,12 @@
  */
 
 export const STORAGE_KEYS = {
-  // OpenAlgo API Settings
-  OA_API_KEY: 'oa_apikey',
-  OA_HOST_URL: 'oa_host_url',
-  OA_WS_URL: 'oa_ws_url',
-  OA_USERNAME: 'oa_username',
-  OA_LOG_LEVEL: 'oa_log_level',
+  // AngelAlgo API Settings (aa_ prefix to match BrokerLogin.jsx)
+  OA_API_KEY: 'aa_apikey',
+  OA_HOST_URL: 'aa_host_url',
+  OA_WS_URL: 'aa_ws_url',
+  OA_USERNAME: 'aa_username',
+  OA_LOG_LEVEL: 'aa_log_level',
 
   // Chart Settings
   THEME: 'tv_theme',

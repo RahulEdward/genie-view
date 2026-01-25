@@ -6,6 +6,8 @@ import {
     getHoldings,
     getTradeBook
 } from '../services/angelalgo';
+import { eventService, Events } from '../services/eventService';
+import logger from '../utils/logger';
 
 export const useTradingData = (isAuthenticated) => {
     const [positions, setPositions] = useState([]);
@@ -26,11 +28,126 @@ export const useTradingData = (isAuthenticated) => {
         };
     }, []);
 
+    // Event-driven data refresh
+    useEffect(() => {
+        if (!isAuthenticated) return;
+
+        // Subscribe to events that require data refresh
+        const unsubscribers = [
+            // Order events - refresh orders and funds
+            eventService.on(Events.ORDER_PLACED, () => {
+                logger.debug('[useTradingData] Order placed - refreshing orders and funds');
+                refreshOrders();
+                refreshFunds();
+            }),
+            eventService.on(Events.ORDER_MODIFIED, () => {
+                logger.debug('[useTradingData] Order modified - refreshing orders');
+                refreshOrders();
+            }),
+            eventService.on(Events.ORDER_CANCELLED, () => {
+                logger.debug('[useTradingData] Order cancelled - refreshing orders and funds');
+                refreshOrders();
+                refreshFunds();
+            }),
+
+            // Position events - refresh positions, funds, and trades
+            eventService.on(Events.POSITION_CLOSED, () => {
+                logger.debug('[useTradingData] Position closed - refreshing positions, funds, and trades');
+                refreshPositions();
+                refreshFunds();
+                refreshTrades();
+            }),
+            eventService.on(Events.POSITION_UPDATED, () => {
+                logger.debug('[useTradingData] Position updated - refreshing positions');
+                refreshPositions();
+            }),
+
+            // Trade events - refresh trades and positions
+            eventService.on(Events.TRADE_EXECUTED, () => {
+                logger.debug('[useTradingData] Trade executed - refreshing trades and positions');
+                refreshTrades();
+                refreshPositions();
+            }),
+
+            // Funds events - refresh funds
+            eventService.on(Events.FUNDS_UPDATED, () => {
+                logger.debug('[useTradingData] Funds updated - refreshing funds');
+                refreshFunds();
+            }),
+
+            // Generic refresh event - refresh all data
+            eventService.on(Events.DATA_REFRESH, () => {
+                logger.debug('[useTradingData] Data refresh requested - refreshing all data');
+                refreshTradingData();
+            })
+        ];
+
+        // Cleanup subscriptions on unmount
+        return () => {
+            unsubscribers.forEach(unsubscribe => unsubscribe());
+        };
+    }, [isAuthenticated]);
+
+    // Individual refresh functions for targeted updates
+    const refreshOrders = async () => {
+        if (!isMounted.current) return;
+        try {
+            const orderData = await getOrderBook();
+            const orderList = Array.isArray(orderData.orders) ? orderData.orders : [];
+            setOrders(orderList);
+
+            const active = orderList.filter(o => {
+                const status = (o.status || o.order_status || '').toUpperCase().replace(/\s+/g, '_');
+                return ['OPEN', 'PENDING', 'TRIGGER_PENDING', 'VALIDATION_PENDING'].includes(status);
+            });
+            setActiveOrders(active);
+        } catch (error) {
+            logger.error('[useTradingData] Error refreshing orders:', error);
+        }
+    };
+
+    const refreshPositions = async () => {
+        if (!isMounted.current) return;
+        try {
+            const posData = await getPositionBook();
+            const positionsList = Array.isArray(posData) ? posData : [];
+            setPositions(positionsList);
+
+            const activePos = positionsList.filter(p => parseFloat(p.quantity || 0) !== 0);
+            setActivePositions(activePos);
+        } catch (error) {
+            logger.error('[useTradingData] Error refreshing positions:', error);
+        }
+    };
+
+    const refreshFunds = async () => {
+        if (!isMounted.current) return;
+        try {
+            const fundsData = await getFunds();
+            setFunds(fundsData || {});
+        } catch (error) {
+            logger.error('[useTradingData] Error refreshing funds:', error);
+        }
+    };
+
+    const refreshTrades = async () => {
+        if (!isMounted.current) return;
+        try {
+            const tradeData = await getTradeBook();
+            const tradeList = Array.isArray(tradeData) ? tradeData : [];
+            setTrades(tradeList);
+        } catch (error) {
+            logger.error('[useTradingData] Error refreshing trades:', error);
+        }
+    };
+
     useEffect(() => {
         let intervalId;
 
         const fetchData = async () => {
-            if (!isAuthenticated) return;
+            // Check if authenticated AND API key exists
+            const apiKey = localStorage.getItem('aa_apikey');
+            if (!isAuthenticated || !apiKey) return;
 
             try {
                 // Fetch all data in parallel
@@ -92,15 +209,17 @@ export const useTradingData = (isAuthenticated) => {
         // Initial fetch
         fetchData();
 
-        // Poll every 3 seconds
-        intervalId = setInterval(fetchData, 3000);
+        // Poll every 60 seconds to avoid Angel One API rate limits
+        intervalId = setInterval(fetchData, 60000);
 
         return () => clearInterval(intervalId);
     }, [isAuthenticated]);
 
     // Function to manually refresh data (e.g. after placing an order)
     const refreshTradingData = async () => {
-        if (!isAuthenticated) return;
+        // Check if authenticated AND API key exists
+        const apiKey = localStorage.getItem('aa_apikey');
+        if (!isAuthenticated || !apiKey) return;
 
         try {
             const [posData, orderData, fundsData, holdingsData, tradeData] = await Promise.all([

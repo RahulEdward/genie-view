@@ -33,6 +33,16 @@ async def get_api_key(
     return api_key
 
 
+async def get_api_key_flexible(
+    api_key_header: Optional[str] = Depends(api_key_header),
+) -> Optional[str]:
+    """
+    Extract API key from header (flexible - returns None if not found).
+    Endpoints can then check request body as fallback.
+    """
+    return api_key_header
+
+
 async def validate_api_key(
     api_key: str = Depends(get_api_key),
     db: AsyncSession = Depends(get_db)

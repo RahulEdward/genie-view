@@ -49,40 +49,64 @@ def transform_quote_data(
     """
     Transform Angel One quote data to Quote.
     
-    Angel One returns nested structure with fetched array
+    start:
+    Handles both full response ({fetched: [...]}) and single item ({ltp: ...})
     """
-    fetched = data.get("fetched", [])
+    # Check if data Is the item (batch processing passes items directly)
+    if "ltp" in data or "symbolToken" in data:
+        item = data
+    else:
+        # Try to extract from fetched list (single quote API response)
+        fetched = data.get("fetched", [])
+        if fetched:
+            item = fetched[0]
+        else:
+            # Return empty quote
+            return Quote(
+                symbol=symbol,
+                exchange=exchange,
+                ltp=0,
+                open=0,
+                high=0,
+                low=0,
+                prev_close=0,
+                volume=0,
+                timestamp=int(datetime.now().timestamp())
+            )
     
-    if not fetched:
-        # Return empty quote
-        return Quote(
-            symbol=symbol,
-            exchange=exchange,
-            ltp=0,
-            open=0,
-            high=0,
-            low=0,
-            prev_close=0,
-            volume=0,
-            timestamp=int(datetime.now().timestamp())
-        )
-    
-    item = fetched[0]
+    # Parse fields safely
+    try:
+        ltp = float(item.get("ltp", 0))
+    except (ValueError, TypeError):
+        ltp = 0.0
+        
+    try:
+        open_px = float(item.get("open", 0))
+        high_px = float(item.get("high", 0))
+        low_px = float(item.get("low", 0))
+        prev_close = float(item.get("close", item.get("prevClose", 0)))
+        volume = int(item.get("tradeVolume", item.get("volume", 0)))
+    except (ValueError, TypeError):
+        open_px = 0.0
+        high_px = 0.0
+        low_px = 0.0
+        prev_close = 0.0
+        volume = 0
     
     return Quote(
         symbol=symbol,
         exchange=exchange,
-        ltp=float(item.get("ltp", 0)),
-        open=float(item.get("open", 0)),
-        high=float(item.get("high", 0)),
-        low=float(item.get("low", 0)),
-        prev_close=float(item.get("close", item.get("prevClose", 0))),
-        volume=int(item.get("tradeVolume", item.get("volume", 0))),
+        ltp=ltp,
+        open=open_px,
+        high=high_px,
+        low=low_px,
+        prev_close=prev_close,
+        volume=volume,
         timestamp=int(datetime.now().timestamp()),
-        bid=float(item.get("depth", {}).get("buy", [{}])[0].get("price", 0)) if item.get("depth") else None,
-        ask=float(item.get("depth", {}).get("sell", [{}])[0].get("price", 0)) if item.get("depth") else None,
-        bid_qty=int(item.get("depth", {}).get("buy", [{}])[0].get("quantity", 0)) if item.get("depth") else None,
-        ask_qty=int(item.get("depth", {}).get("sell", [{}])[0].get("quantity", 0)) if item.get("depth") else None
+        bid=float(item.get("depth", {}).get("buy", [{}])[0].get("price", 0)) if item.get("depth") and item.get("depth", {}).get("buy") else None,
+        ask=float(item.get("depth", {}).get("sell", [{}])[0].get("price", 0)) if item.get("depth") and item.get("depth", {}).get("sell") else None,
+        bid_qty=int(item.get("depth", {}).get("buy", [{}])[0].get("quantity", 0)) if item.get("depth") and item.get("depth", {}).get("buy") else None,
+        ask_qty=int(item.get("depth", {}).get("sell", [{}])[0].get("quantity", 0)) if item.get("depth") and item.get("depth", {}).get("sell") else None
     )
 
 
@@ -122,12 +146,28 @@ def transform_symbol_info(data: Dict) -> SymbolInfo:
     
     if data.get("optiontype"):
         option_type = data["optiontype"]
-    elif instrument_type in ["OPTIDX", "OPTSTK"]:
-        # Try to parse from symbol
-        if symbol.endswith("CE"):
-            option_type = "CE"
-        elif symbol.endswith("PE"):
-            option_type = "PE"
+    
+    # Always check symbol for CE/PE if not set or even if set (verification)
+    if symbol.endswith("CE"):
+        option_type = "CE"
+        if not instrument_type:
+            instrument_type = "OPTIDX" if any(idx in symbol for idx in ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]) else "OPTSTK"
+    elif symbol.endswith("PE"):
+        option_type = "PE"
+        if not instrument_type:
+            instrument_type = "OPTIDX" if any(idx in symbol for idx in ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]) else "OPTSTK"
+        
+    # If it's an option, try to extract strike and expiry if missing
+    if option_type:
+        if not strike:
+            strike = _extract_strike_from_symbol(symbol)
+        
+        if not expiry:
+            # Try to extract expiry from symbol (7-char format)
+            import re
+            match = re.search(r'(\d{2}[A-Z]{3}\d{2})', symbol, re.IGNORECASE)
+            if match:
+                expiry = normalize_expiry(match.group(1))
     
     return SymbolInfo(
         symbol=symbol,
@@ -143,35 +183,75 @@ def transform_symbol_info(data: Dict) -> SymbolInfo:
     )
 
 
+def _extract_strike_from_symbol(symbol: str) -> Optional[float]:
+    """
+    Extract strike price from option symbol.
+    
+    Examples:
+    - RELIANCE30JAN2526000CE -> 26000
+    - NIFTY30JAN2524000CE -> 24000
+    - BANKNIFTY30JAN2550000PE -> 50000
+    """
+    import re
+    
+    # Remove CE/PE suffix
+    symbol_base = symbol[:-2] if symbol.endswith(('CE', 'PE')) else symbol
+    
+    # Pattern: ends with digits after expiry date (DDMMMYY or DDMMMYYYY)
+    # Extract the numeric part after the date
+    # Support both 2-digit and 4-digit years
+    match = re.search(r'\d{2}[A-Z]{3}(?:\d{4}|\d{2})(\d+)$', symbol_base)
+    if match:
+        try:
+            return float(match.group(1))
+        except ValueError:
+            pass
+    
+    return None
+
+
 def normalize_expiry(expiry: str) -> str:
     """
-    Normalize expiry date to DDMMMYY format.
+    Normalize expiry date to DDMMMYYYY format (4-digit year).
     
     Handles formats like:
-    - "2025-01-30" -> "30JAN25"
-    - "30-JAN-2025" -> "30JAN25"
-    - "30JAN25" -> "30JAN25"
+    - "2025-01-30" -> "30JAN2025"
+    - "30-JAN-2025" -> "30JAN2025"
+    - "30JAN25" -> "30JAN2025"
+    - "30JAN2025" -> "30JAN2025"
+    
+    Returns 4-digit year format to match instrument master database.
     """
     if not expiry:
         return ""
     
-    # Already in correct format
-    if len(expiry) == 7 and expiry[2:5].isalpha():
+    # Already in DDMMMYYYY format (9 chars)
+    if len(expiry) == 9 and expiry[2:5].isalpha():
         return expiry.upper()
     
-    # Try ISO format
+    # DDMMMYY format (7 chars) -> convert to DDMMMYYYY
+    if len(expiry) == 7 and expiry[2:5].isalpha():
+        # Extract 2-digit year and convert to 4-digit
+        yy = expiry[5:7]
+        # Assume 20xx for years 00-99
+        yyyy = "20" + yy
+        return (expiry[:5] + yyyy).upper()
+
+    # Try ISO format (YYYY-MM-DD)
     try:
         if "-" in expiry and len(expiry) == 10:
             dt = datetime.strptime(expiry, "%Y-%m-%d")
-            return dt.strftime("%d%b%y").upper()
+            return dt.strftime("%d%b%Y").upper()
     except ValueError:
         pass
     
     # Try DD-MMM-YYYY format
     try:
         if "-" in expiry:
-            dt = datetime.strptime(expiry, "%d-%b-%Y")
-            return dt.strftime("%d%b%y").upper()
+            # Handle both 2-digit and 4-digit years
+            fmt = "%d-%b-%Y" if len(expiry.split("-")[-1]) == 4 else "%d-%b-%y"
+            dt = datetime.strptime(expiry, fmt)
+            return dt.strftime("%d%b%Y").upper()
     except ValueError:
         pass
     

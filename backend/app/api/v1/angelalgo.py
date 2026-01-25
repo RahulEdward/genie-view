@@ -15,6 +15,12 @@ from app.utils.logger import logger
 router = APIRouter()
 
 
+
+@router.post("/ping")
+async def ping():
+    return {"status": "success", "message": "Pong"}
+
+
 @router.get("/chart")
 async def get_chart_preferences_get(
     apikey: Optional[str] = Query(None),
@@ -96,49 +102,338 @@ async def get_intervals():
 
 @router.post("/positionbook")
 async def get_positions(
-    apikey: Optional[str] = None,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """Get open positions (OpenAlgo compatibility)"""
-    # For now return empty - would need broker integration
-    return {"status": "success", "data": []}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    
+    api_key = body.get("apikey")
+    
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "API key required"}
+        )
+    
+    # Validate API key and get broker adapter
+    auth_service = AuthService(db)
+    session = await auth_service.get_session(api_key)
+    
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "Invalid API key"}
+        )
+    
+    try:
+        broker = await auth_service.get_broker_for_session(session)
+        positions = await broker.get_positions()
+        return {"status": "success", "data": positions}
+    except Exception as e:
+        logger.error(f"Error fetching positions: {e}")
+        return {"status": "success", "data": []}
 
 
 @router.post("/orderbook")
 async def get_orders(
-    apikey: Optional[str] = None,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """Get order book (OpenAlgo compatibility)"""
-    # For now return empty - would need broker integration
-    return {"status": "success", "data": []}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    
+    api_key = body.get("apikey")
+    
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "API key required"}
+        )
+    
+    # Validate API key and get broker adapter
+    auth_service = AuthService(db)
+    session = await auth_service.get_session(api_key)
+    
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "Invalid API key"}
+        )
+    
+    try:
+        broker = await auth_service.get_broker_for_session(session)
+        orders = await broker.get_orders()
+        return {"status": "success", "data": {"orders": orders, "statistics": {}}}
+    except Exception as e:
+        logger.error(f"Error fetching orders: {e}")
+        return {"status": "success", "data": {"orders": [], "statistics": {}}}
 
 
 @router.post("/funds")
 async def get_funds(
-    apikey: Optional[str] = None,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """Get account funds (OpenAlgo compatibility)"""
-    # For now return empty - would need broker integration
-    return {"status": "success", "data": {}}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    
+    api_key = body.get("apikey")
+    
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "API key required"}
+        )
+    
+    # Validate API key and get broker adapter
+    auth_service = AuthService(db)
+    session = await auth_service.get_session(api_key)
+    
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "Invalid API key"}
+        )
+    
+    try:
+        broker = await auth_service.get_broker_for_session(session)
+        funds = await broker.get_funds()
+        return {"status": "success", "data": funds}
+    except Exception as e:
+        logger.error(f"Error fetching funds: {e}")
+        return {"status": "success", "data": {}}
 
 
 @router.post("/holdings")
 async def get_holdings(
-    apikey: Optional[str] = None,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """Get holdings (OpenAlgo compatibility)"""
-    # For now return empty - would need broker integration
-    return {"status": "success", "data": []}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    
+    api_key = body.get("apikey")
+    
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "API key required"}
+        )
+    
+    # Validate API key and get broker adapter
+    auth_service = AuthService(db)
+    session = await auth_service.get_session(api_key)
+    
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "Invalid API key"}
+        )
+    
+    try:
+        broker = await auth_service.get_broker_for_session(session)
+        holdings = await broker.get_holdings()
+        return {"status": "success", "data": {"holdings": holdings, "statistics": {}}}
+    except Exception as e:
+        logger.error(f"Error fetching holdings: {e}")
+        return {"status": "success", "data": {"holdings": [], "statistics": {}}}
 
 
 @router.post("/tradebook")
 async def get_trades(
-    apikey: Optional[str] = None,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """Get trade book (OpenAlgo compatibility)"""
-    # For now return empty - would need broker integration
-    return {"status": "success", "data": []}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    
+    api_key = body.get("apikey")
+    
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "API key required"}
+        )
+    
+    # Validate API key and get broker adapter
+    auth_service = AuthService(db)
+    session = await auth_service.get_session(api_key)
+    
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "Invalid API key"}
+        )
+    
+    try:
+        broker = await auth_service.get_broker_for_session(session)
+        trades = await broker.get_trades()
+        return {"status": "success", "data": trades}
+    except Exception as e:
+        logger.error(f"Error fetching trades: {e}")
+        return {"status": "success", "data": []}
+
+
+@router.post("/placeorder")
+async def place_order(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Place order (OpenAlgo compatibility)"""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    
+    api_key = body.get("apikey")
+    
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "API key required"}
+        )
+    
+    # Validate API key
+    auth_service = AuthService(db)
+    session = await auth_service.get_session(api_key)
+    
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "Invalid API key"}
+        )
+    
+    try:
+        broker = await auth_service.get_broker_for_session(session)
+        # Pass the entire body as params (contains symbol, action, etc.)
+        response = await broker.place_order(body)
+        
+        # Format response for frontend
+        if response.get("status"):
+            return {
+                "status": "success",
+                "message": "Order placed successfully",
+                "orderid": response.get("data", {}).get("orderid"),
+                "script": body.get("symbol") # Optional
+            }
+        else:
+            return {
+                "status": "error",
+                "message": response.get("message") or "Order failed"
+            }
+            
+    except Exception as e:
+        logger.error(f"Error placing order: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@router.post("/modifyorder")
+async def modify_order(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Modify order (OpenAlgo compatibility)"""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    
+    api_key = body.get("apikey")
+    
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "API key required"}
+        )
+    
+    auth_service = AuthService(db)
+    session = await auth_service.get_session(api_key)
+    
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "Invalid API key"}
+        )
+    
+    try:
+        broker = await auth_service.get_broker_for_session(session)
+        response = await broker.modify_order(body)
+        
+        if response.get("status"):
+            return {
+                "status": "success",
+                "message": "Order modified successfully",
+                "orderid": body.get("orderid")
+            }
+        else:
+             return {
+                "status": "error",
+                "message": response.get("message") or "Modify failed"
+            }
+    except Exception as e:
+        logger.error(f"Error modifying order: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@router.post("/cancelorder")
+async def cancel_order(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Cancel order (OpenAlgo compatibility)"""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    
+    api_key = body.get("apikey")
+    
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "API key required"}
+        )
+    
+    auth_service = AuthService(db)
+    session = await auth_service.get_session(api_key)
+    
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "Invalid API key"}
+        )
+    
+    try:
+        broker = await auth_service.get_broker_for_session(session)
+        response = await broker.cancel_order(body)
+        
+        if response.get("status"):
+             return {
+                "status": "success",
+                "message": "Order cancelled successfully",
+                "orderid": body.get("orderid")
+            }
+        else:
+             return {
+                "status": "error",
+                "message": response.get("message") or "Cancel failed"
+            }
+    except Exception as e:
+        logger.error(f"Error cancelling order: {e}")
+        return {"status": "error", "message": str(e)}

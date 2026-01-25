@@ -6,13 +6,16 @@ Handles symbol search, instrument master, and symbol lookup
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, func
+from sqlalchemy import select, or_, func, delete
+import httpx
+import asyncio
 
 from app.brokers.base import BrokerAdapter, SymbolInfo
 from app.models.database import InstrumentMaster
 from app.utils.cache import symbol_cache
 from app.utils.logger import logger
 from app.config import settings
+from app.api.exceptions import BrokerError
 
 
 class SymbolService:
@@ -21,6 +24,331 @@ class SymbolService:
     def __init__(self, broker: BrokerAdapter, db: AsyncSession):
         self.broker = broker
         self.db = db
+    
+    async def download_instrument_master(self) -> List[Dict]:
+        """
+        Download instrument master file from Angel One.
+        
+        Implements retry logic with exponential backoff (3 attempts: 1s, 2s, 4s).
+        
+        Returns:
+            List of instrument dictionaries
+        
+        Raises:
+            BrokerError: If download fails after all retries
+        """
+        from app.brokers.angelone.endpoints import ENDPOINTS
+        
+        url = ENDPOINTS["instrument_master"]
+        max_retries = 3
+        retry_delays = [1, 2, 4]  # Exponential backoff in seconds
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Downloading instrument master (attempt {attempt + 1}/{max_retries})...")
+                
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.get(url)
+                    response.raise_for_status()
+                    
+                    # Parse JSON
+                    data = response.json()
+                    
+                    if not isinstance(data, list):
+                        raise ValueError("Instrument master file is not a JSON array")
+                    
+                    logger.info(f"Successfully downloaded {len(data)} instruments")
+                    return data
+                    
+            except httpx.HTTPStatusError as e:
+                error_msg = f"HTTP error {e.response.status_code}: {e.response.text[:200]}"
+                logger.error(f"Download attempt {attempt + 1} failed: {error_msg}")
+                
+                if attempt < max_retries - 1:
+                    delay = retry_delays[attempt]
+                    logger.info(f"Retrying in {delay} seconds...")
+                    await asyncio.sleep(delay)
+                else:
+                    raise BrokerError(
+                        message=f"Failed to download instrument master after {max_retries} retries",
+                        details={"url": url, "last_error": error_msg, "retry_count": max_retries}
+                    )
+                    
+            except httpx.RequestError as e:
+                error_msg = f"Connection error: {str(e)}"
+                logger.error(f"Download attempt {attempt + 1} failed: {error_msg}")
+                
+                if attempt < max_retries - 1:
+                    delay = retry_delays[attempt]
+                    logger.info(f"Retrying in {delay} seconds...")
+                    await asyncio.sleep(delay)
+                else:
+                    raise BrokerError(
+                        message=f"Failed to download instrument master after {max_retries} retries",
+                        details={"url": url, "last_error": error_msg, "retry_count": max_retries}
+                    )
+                    
+            except (ValueError, KeyError) as e:
+                error_msg = f"Parse error: {str(e)}"
+                logger.error(f"Download attempt {attempt + 1} failed: {error_msg}")
+                
+                if attempt < max_retries - 1:
+                    delay = retry_delays[attempt]
+                    logger.info(f"Retrying in {delay} seconds...")
+                    await asyncio.sleep(delay)
+                else:
+                    raise BrokerError(
+                        message=f"Failed to parse instrument master after {max_retries} retries",
+                        details={"url": url, "last_error": error_msg, "retry_count": max_retries}
+                    )
+        
+        # Should never reach here, but just in case
+        raise BrokerError(
+            message="Failed to download instrument master",
+            details={"url": url, "retry_count": max_retries}
+        )
+    
+    def parse_instrument_record(self, record: Dict) -> Optional[InstrumentMaster]:
+        """
+        Parse a single instrument record from the master file.
+        
+        Validates required fields and extracts option_type from symbol.
+        
+        Args:
+            record: Raw instrument dictionary from JSON
+        
+        Returns:
+            InstrumentMaster model instance or None if invalid
+        """
+        try:
+            # Validate required fields
+            required_fields = ["token", "symbol", "exch_seg"]
+            for field in required_fields:
+                if field not in record or not record[field]:
+                    logger.debug(f"Skipping record: missing required field '{field}'")
+                    return None
+            
+            # Extract fields
+            token = str(record["token"]).strip()
+            symbol = str(record["symbol"]).strip().upper()
+            name = str(record.get("name", "")).strip().upper() or symbol
+            exchange = str(record["exch_seg"]).strip().upper()
+            instrument_type = str(record.get("instrumenttype", "")).strip().upper()
+            
+            # Parse numeric fields with defaults
+            try:
+                lot_size = int(record.get("lotsize", 1))
+            except (ValueError, TypeError):
+                lot_size = 1
+            
+            try:
+                tick_size = float(record.get("tick_size", 0.05))
+            except (ValueError, TypeError):
+                tick_size = 0.05
+            
+            # Parse expiry (optional)
+            expiry = str(record.get("expiry", "")).strip().upper() if record.get("expiry") else None
+            
+            # Parse strike (optional)
+            strike = None
+            if record.get("strike"):
+                try:
+                    strike = float(record["strike"])
+                except (ValueError, TypeError):
+                    pass
+            
+            # Extract option_type from symbol (CE/PE at the end)
+            option_type = None
+            if symbol.endswith("CE"):
+                option_type = "CE"
+            elif symbol.endswith("PE"):
+                option_type = "PE"
+            
+            # Create InstrumentMaster instance
+            return InstrumentMaster(
+                symbol=symbol,
+                token=token,
+                name=name,
+                exchange=exchange,
+                instrument_type=instrument_type,
+                lot_size=lot_size,
+                tick_size=tick_size,
+                expiry=expiry,
+                strike=strike,
+                option_type=option_type,
+                updated_at=datetime.utcnow()
+            )
+            
+        except Exception as e:
+            logger.warning(f"Error parsing instrument record: {e}, record: {record}")
+            return None
+    
+    async def store_instruments_bulk(self, instruments: List[InstrumentMaster]) -> int:
+        """
+        Store instruments in database using bulk insert.
+        
+        Clears existing data and uses bulk insert for performance.
+        Wraps in transaction for atomicity.
+        Deduplicates instruments by (symbol, exchange) before inserting.
+        
+        Args:
+            instruments: List of InstrumentMaster instances
+        
+        Returns:
+            Number of instruments stored
+        """
+        if not instruments:
+            logger.warning("No instruments to store")
+            return 0
+        
+        try:
+            # Clear existing instrument_master table
+            logger.info("Clearing existing instrument master data...")
+            await self.db.execute(delete(InstrumentMaster))
+            
+            # Deduplicate instruments by (symbol, exchange)
+            # Keep the first occurrence of each unique (symbol, exchange) pair
+            seen = set()
+            unique_instruments = []
+            duplicates = 0
+            
+            for inst in instruments:
+                key = (inst.symbol, inst.exchange)
+                if key not in seen:
+                    seen.add(key)
+                    unique_instruments.append(inst)
+                else:
+                    duplicates += 1
+            
+            if duplicates > 0:
+                logger.info(f"Removed {duplicates} duplicate instruments")
+            
+            # Prepare bulk insert data
+            instrument_dicts = []
+            for inst in unique_instruments:
+                instrument_dicts.append({
+                    "symbol": inst.symbol,
+                    "token": inst.token,
+                    "name": inst.name,
+                    "exchange": inst.exchange,
+                    "instrument_type": inst.instrument_type,
+                    "lot_size": inst.lot_size,
+                    "tick_size": inst.tick_size,
+                    "expiry": inst.expiry,
+                    "strike": inst.strike,
+                    "option_type": inst.option_type,
+                    "updated_at": inst.updated_at
+                })
+            
+            # Bulk insert using SQLAlchemy bulk_insert_mappings
+            logger.info(f"Bulk inserting {len(instrument_dicts)} instruments...")
+            await self.db.run_sync(
+                lambda session: session.bulk_insert_mappings(InstrumentMaster, instrument_dicts)
+            )
+            
+            # Commit transaction
+            await self.db.commit()
+            
+            logger.info(f"Successfully stored {len(instrument_dicts)} instruments")
+            return len(instrument_dicts)
+            
+        except Exception as e:
+            logger.error(f"Error storing instruments: {e}")
+            await self.db.rollback()
+            raise
+    
+    async def query_options_by_expiry(
+        self,
+        underlying: str,
+        exchange: str,
+        expiry: str
+    ) -> List[InstrumentMaster]:
+        """
+        Query option instruments for a specific underlying and expiry.
+        
+        Uses indexed query for performance.
+        
+        Args:
+            underlying: Underlying symbol (e.g., "NIFTY")
+            exchange: Exchange code (e.g., "NFO")
+            expiry: Expiry date in normalized format (e.g., "30JAN25")
+        
+        Returns:
+            List of matching option instruments sorted by strike
+        """
+        try:
+            # Normalize inputs
+            underlying = underlying.strip().upper()
+            exchange = exchange.strip().upper()
+            expiry = expiry.strip().upper()
+            
+            # Query using composite index
+            result = await self.db.execute(
+                select(InstrumentMaster).where(
+                    InstrumentMaster.name == underlying,
+                    InstrumentMaster.exchange == exchange,
+                    InstrumentMaster.expiry == expiry,
+                    InstrumentMaster.option_type.in_(["CE", "PE"])
+                ).order_by(InstrumentMaster.strike.asc())
+            )
+            
+            instruments = result.scalars().all()
+            
+            logger.debug(f"Found {len(instruments)} options for {underlying} {expiry} on {exchange}")
+            return list(instruments)
+            
+        except Exception as e:
+            logger.error(f"Error querying options: {e}")
+            return []
+    
+    async def get_instrument_health(self) -> Dict:
+        """
+        Check health status of instrument master data.
+        
+        Returns:
+            {
+                "available": bool,
+                "count": int,
+                "last_updated": datetime,
+                "is_stale": bool
+            }
+        """
+        try:
+            # Get count of instruments
+            result = await self.db.execute(
+                select(func.count(InstrumentMaster.id))
+            )
+            count = result.scalar() or 0
+            
+            # Get last updated timestamp
+            result = await self.db.execute(
+                select(func.max(InstrumentMaster.updated_at))
+            )
+            last_updated = result.scalar()
+            
+            # Check if data is stale (>48 hours old)
+            is_stale = False
+            if last_updated:
+                age = datetime.utcnow() - last_updated
+                is_stale = age > timedelta(hours=48)
+            
+            available = count > 0
+            
+            return {
+                "available": available,
+                "count": count,
+                "last_updated": last_updated,
+                "is_stale": is_stale
+            }
+            
+        except Exception as e:
+            logger.error(f"Error checking instrument health: {e}")
+            return {
+                "available": False,
+                "count": 0,
+                "last_updated": None,
+                "is_stale": True
+            }
     
     async def search(
         self,
@@ -112,6 +440,11 @@ class SymbolService:
         """
         Refresh instrument master from broker.
         
+        Uses download_instrument_master() instead of broker.get_instrument_master().
+        Implements retry logic with exponential backoff.
+        Clears existing data before bulk insert.
+        Uses transactions for atomic updates.
+        
         Args:
             force: Force refresh even if recently updated
         
@@ -127,27 +460,47 @@ class SymbolService:
         
         logger.info("Refreshing instrument master...")
         
-        # Fetch from broker
-        instruments = await self.broker.get_instrument_master()
-        
-        if not instruments:
-            logger.warning("No instruments received from broker")
-            return 0
-        
-        # Update database
-        count = 0
-        for inst in instruments:
-            await self._upsert_instrument(inst)
-            count += 1
+        try:
+            # Download instrument master file
+            raw_instruments = await self.download_instrument_master()
             
-            # Commit in batches
-            if count % 1000 == 0:
-                await self.db.commit()
-                logger.debug(f"Processed {count} instruments")
-        
-        await self.db.commit()
-        
-        # Update refresh timestamp
+            if not raw_instruments:
+                logger.warning("No instruments received from download")
+                return 0
+            
+            # Parse instruments
+            parsed_instruments = []
+            failed_count = 0
+            
+            for record in raw_instruments:
+                inst = self.parse_instrument_record(record)
+                if inst:
+                    parsed_instruments.append(inst)
+                else:
+                    failed_count += 1
+            
+            logger.info(f"Parsed {len(parsed_instruments)} instruments ({failed_count} failed)")
+            
+            if not parsed_instruments:
+                logger.warning("No valid instruments after parsing")
+                return 0
+            
+            # Store in database using bulk insert
+            count = await self.store_instruments_bulk(parsed_instruments)
+            
+            # Update refresh timestamp
+            await self._set_last_refresh_time()
+            
+            logger.info(f"Instrument master refreshed: {count} instruments")
+            return count
+            
+        except BrokerError as e:
+            logger.error(f"Failed to refresh instrument master: {e}")
+            # Don't raise - allow application to continue with existing data
+            return 0
+        except Exception as e:
+            logger.error(f"Unexpected error refreshing instrument master: {e}")
+            return 0
         await self._set_last_refresh_time()
         
         logger.info(f"Instrument master refreshed: {count} instruments")

@@ -114,7 +114,13 @@ async def trading_exception_handler(request: Request, exc: TradingException):
 
 async def http_exception_handler(request: Request, exc: HTTPException):
     """Handle HTTPException"""
-    logger.error(f"HTTPException: {exc.status_code} - {exc.detail}")
+    # Suppress 401 errors during logout (expected behavior)
+    # Only log if it's not a simple auth failure
+    if exc.status_code == 401:
+        # Don't log 401 errors - they're expected when session expires or user logs out
+        pass
+    else:
+        logger.error(f"HTTPException: {exc.status_code} - {exc.detail}")
     
     # If detail is already formatted, use it
     if isinstance(exc.detail, dict) and "code" in exc.detail:

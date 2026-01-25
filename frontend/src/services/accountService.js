@@ -1,10 +1,12 @@
 /**
  * Account Service
  * Trading account operations - funds, positions, orders, holdings
+ * Updated to use unified backend API service
  */
 
 import logger from '../utils/logger.js';
-import { getApiKey, getApiBase } from './apiConfig';
+import { callBackendAPI } from './apiService';
+import { eventService, Events } from './eventService';
 
 /**
  * Ping API - Check connectivity and validate API key
@@ -12,28 +14,10 @@ import { getApiKey, getApiBase } from './apiConfig';
  */
 export const ping = async () => {
     try {
-        const apiKey = getApiKey();
-        if (!apiKey) return null;
-
-        const response = await fetch(`${getApiBase()}/ping`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ apikey: apiKey })
-        });
-
-        if (!response.ok) {
-            logger.warn('[OpenAlgo] Ping failed:', response.status);
-            return null;
-        }
-
-        const data = await response.json();
-        if (data.status === 'success') {
-            return data.data;
-        }
-        return null;
+        const data = await callBackendAPI('/ping');
+        return data;
     } catch (error) {
-        console.error('[OpenAlgo] Ping error:', error);
+        logger.warn('[AccountService] Ping failed:', error.message);
         return null;
     }
 };
@@ -44,28 +28,10 @@ export const ping = async () => {
  */
 export const getFunds = async () => {
     try {
-        const apiKey = getApiKey();
-        if (!apiKey) return null;
-
-        const response = await fetch(`${getApiBase()}/funds`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ apikey: apiKey })
-        });
-
-        if (!response.ok) {
-            logger.warn('[OpenAlgo] Funds API failed:', response.status);
-            return null;
-        }
-
-        const data = await response.json();
-        if (data.status === 'success') {
-            return data.data;
-        }
-        return null;
+        const data = await callBackendAPI('/funds');
+        return data;
     } catch (error) {
-        console.error('[OpenAlgo] Funds error:', error);
+        logger.error('[AccountService] Funds error:', error.message);
         return null;
     }
 };
@@ -76,28 +42,10 @@ export const getFunds = async () => {
  */
 export const getPositionBook = async () => {
     try {
-        const apiKey = getApiKey();
-        if (!apiKey) return [];
-
-        const response = await fetch(`${getApiBase()}/positionbook`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ apikey: apiKey })
-        });
-
-        if (!response.ok) {
-            logger.warn('[OpenAlgo] PositionBook API failed:', response.status);
-            return [];
-        }
-
-        const data = await response.json();
-        if (data.status === 'success') {
-            return data.data || [];
-        }
-        return [];
+        const data = await callBackendAPI('/positionbook');
+        return data || [];
     } catch (error) {
-        console.error('[OpenAlgo] PositionBook error:', error);
+        logger.error('[AccountService] PositionBook error:', error.message);
         return [];
     }
 };
@@ -108,28 +56,10 @@ export const getPositionBook = async () => {
  */
 export const getOrderBook = async () => {
     try {
-        const apiKey = getApiKey();
-        if (!apiKey) return { orders: [], statistics: {} };
-
-        const response = await fetch(`${getApiBase()}/orderbook`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ apikey: apiKey })
-        });
-
-        if (!response.ok) {
-            logger.warn('[OpenAlgo] OrderBook API failed:', response.status);
-            return { orders: [], statistics: {} };
-        }
-
-        const data = await response.json();
-        if (data.status === 'success') {
-            return data.data || { orders: [], statistics: {} };
-        }
-        return { orders: [], statistics: {} };
+        const data = await callBackendAPI('/orderbook');
+        return data || { orders: [], statistics: {} };
     } catch (error) {
-        console.error('[OpenAlgo] OrderBook error:', error);
+        logger.error('[AccountService] OrderBook error:', error.message);
         return { orders: [], statistics: {} };
     }
 };
@@ -140,28 +70,10 @@ export const getOrderBook = async () => {
  */
 export const getTradeBook = async () => {
     try {
-        const apiKey = getApiKey();
-        if (!apiKey) return [];
-
-        const response = await fetch(`${getApiBase()}/tradebook`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ apikey: apiKey })
-        });
-
-        if (!response.ok) {
-            logger.warn('[OpenAlgo] TradeBook API failed:', response.status);
-            return [];
-        }
-
-        const data = await response.json();
-        if (data.status === 'success') {
-            return data.data || [];
-        }
-        return [];
+        const data = await callBackendAPI('/tradebook');
+        return data || [];
     } catch (error) {
-        console.error('[OpenAlgo] TradeBook error:', error);
+        logger.error('[AccountService] TradeBook error:', error.message);
         return [];
     }
 };
@@ -172,28 +84,94 @@ export const getTradeBook = async () => {
  */
 export const getHoldings = async () => {
     try {
-        const apiKey = getApiKey();
-        if (!apiKey) return { holdings: [], statistics: {} };
-
-        const response = await fetch(`${getApiBase()}/holdings`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ apikey: apiKey })
-        });
-
-        if (!response.ok) {
-            logger.warn('[OpenAlgo] Holdings API failed:', response.status);
-            return { holdings: [], statistics: {} };
-        }
-
-        const data = await response.json();
-        if (data.status === 'success') {
-            return data.data || { holdings: [], statistics: {} };
-        }
-        return { holdings: [], statistics: {} };
+        const data = await callBackendAPI('/holdings');
+        return data || { holdings: [], statistics: {} };
     } catch (error) {
-        console.error('[OpenAlgo] Holdings error:', error);
+        logger.error('[AccountService] Holdings error:', error.message);
         return { holdings: [], statistics: {} };
+    }
+};
+
+/**
+ * Place Order - Submit new order
+ * @param {Object} orderParams - Order parameters
+ * @returns {Promise<Object>} Order response with order ID
+ */
+export const placeOrder = async (orderParams) => {
+    try {
+        const data = await callBackendAPI('/placeorder', orderParams);
+        logger.info('[AccountService] Order placed successfully:', data);
+        
+        // Emit event for data synchronization
+        eventService.emit(Events.ORDER_PLACED, { order: data, params: orderParams });
+        eventService.emit(Events.FUNDS_UPDATED);
+        
+        return data;
+    } catch (error) {
+        logger.error('[AccountService] PlaceOrder error:', error.message);
+        throw error;
+    }
+};
+
+/**
+ * Modify Order - Update existing order
+ * @param {Object} orderParams - Modified order parameters
+ * @returns {Promise<Object>} Modification response
+ */
+export const modifyOrder = async (orderParams) => {
+    try {
+        const data = await callBackendAPI('/modifyorder', orderParams);
+        logger.info('[AccountService] Order modified successfully:', data);
+        
+        // Emit event for data synchronization
+        eventService.emit(Events.ORDER_MODIFIED, { order: data, params: orderParams });
+        
+        return data;
+    } catch (error) {
+        logger.error('[AccountService] ModifyOrder error:', error.message);
+        throw error;
+    }
+};
+
+/**
+ * Cancel Order - Cancel pending order
+ * @param {string} orderId - Order ID to cancel
+ * @returns {Promise<Object>} Cancellation response
+ */
+export const cancelOrder = async (orderId) => {
+    try {
+        const data = await callBackendAPI('/cancelorder', { orderid: orderId });
+        logger.info('[AccountService] Order cancelled successfully:', data);
+        
+        // Emit event for data synchronization
+        eventService.emit(Events.ORDER_CANCELLED, { orderId, response: data });
+        eventService.emit(Events.FUNDS_UPDATED);
+        
+        return data;
+    } catch (error) {
+        logger.error('[AccountService] CancelOrder error:', error.message);
+        throw error;
+    }
+};
+
+/**
+ * Close Position - Exit position
+ * @param {Object} positionParams - Position parameters
+ * @returns {Promise<Object>} Exit response
+ */
+export const closePosition = async (positionParams) => {
+    try {
+        const data = await callBackendAPI('/closeposition', positionParams);
+        logger.info('[AccountService] Position closed successfully:', data);
+        
+        // Emit events for data synchronization
+        eventService.emit(Events.POSITION_CLOSED, { position: positionParams, response: data });
+        eventService.emit(Events.FUNDS_UPDATED);
+        eventService.emit(Events.TRADE_EXECUTED);
+        
+        return data;
+    } catch (error) {
+        logger.error('[AccountService] ClosePosition error:', error.message);
+        throw error;
     }
 };

@@ -8,7 +8,7 @@
  */
 
 import logger from '../utils/logger.js';
-import { getApiBase, getApiKey } from './angelalgo.js';
+import { callBackendAPI } from './apiService.js';
 
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour cache
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // 5h 30m in milliseconds
@@ -48,24 +48,14 @@ export const getMarketHolidays = async (year = new Date().getFullYear()) => {
     }
 
     try {
-        const response = await fetch(`${getApiBase()}/market/holidays`, {
+        const result = await callBackendAPI('/market/holidays', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
-                apikey: getApiKey(),
-                year
-            })
+            body: { year }
         });
 
-        if (!response.ok) {
-            throw new Error(`Market holidays error: ${response.status}`);
-        }
-
-        const result = await response.json();
         logger.debug('[MarketService] Holidays response:', result);
 
-        if (result.status === 'success' && result.data) {
+        if (result.data) {
             // Update cache
             cache.holidays = {
                 data: result.data,
@@ -109,24 +99,14 @@ export const getMarketTimings = async (date) => {
     }
 
     try {
-        const response = await fetch(`${getApiBase()}/market/timings`, {
+        const result = await callBackendAPI('/market/timings', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
-                apikey: getApiKey(),
-                date
-            })
+            body: { date }
         });
 
-        if (!response.ok) {
-            throw new Error(`Market timings error: ${response.status}`);
-        }
-
-        const result = await response.json();
         logger.debug('[MarketService] Timings response:', result);
 
-        if (result.status === 'success' && result.data) {
+        if (result.data) {
             // Update cache
             cache.timings.set(date, {
                 data: result.data,

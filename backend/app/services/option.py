@@ -66,8 +66,8 @@ class OptionService:
                 await option_chain_cache.set(cache_key, db_cached, ttl=self.cache_ttl)
                 return db_cached
         
-        # Fetch from broker
-        chain_data = await self.broker.get_option_chain(underlying, exchange, expiry)
+        # Fetch from broker (pass database session for querying instruments)
+        chain_data = await self.broker.get_option_chain(underlying, exchange, expiry, db=self.db)
         
         if not chain_data or "options" not in chain_data:
             return {
@@ -314,6 +314,7 @@ class OptionService:
             # Pattern to extract expiry from symbol names
             # Examples: RELIANCE24FEB261000CE, NIFTY30JAN25CE, BANKNIFTY24JAN2550000CE
             # Format: SYMBOL + DDMMMYY + STRIKE + CE/PE
+            # Prefer 2-digit year to avoid merging with strike first digits
             expiry_pattern = re.compile(
                 r'(\d{2}[A-Z]{3}\d{2})',  # DDMMMYY format
                 re.IGNORECASE

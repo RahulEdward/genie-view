@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ChevronDown, ChevronUp, RefreshCw, X, Wallet, Minus, Maximize2, Minimize2, LogOut, XCircle, Wifi, WifiOff, Settings, Search, Filter } from 'lucide-react';
 import styles from './AccountPanel.module.css';
-import { ping, placeOrder, modifyOrder, cancelOrder, subscribeToMultiTicker } from '../../services/angelalgo';
+import { ping, placeOrder, modifyOrder, cancelOrder } from '../../services/angelalgo';
+import { wsManager } from '../../services/websocketManager';
 import ExitPositionModal from '../ExitPositionModal';
 import ModifyOrderModal from './components/ModifyOrderModal';
 import CancelOrderModal from './components/CancelOrderModal';
@@ -61,7 +62,6 @@ const AccountPanel = ({
     // WebSocket state for real-time P&L
     const [isWebSocketConnected, setIsWebSocketConnected] = useState(false);
     const [lastUpdateTime, setLastUpdateTime] = useState({});
-    const wsUnsubscribeRef = useRef(null);
 
     // Closed positions visibility state
     const [showClosedPositions, setShowClosedPositions] = useState(true);
@@ -138,6 +138,53 @@ const AccountPanel = ({
         setIsSettingsPanelOpen(!isSettingsPanelOpen);
     }, [isSettingsPanelOpen]);
 
+    // Disconnect handler
+    const handleDisconnect = useCallback(async () => {
+        if (!window.confirm('Are you sure you want to disconnect from the broker?')) {
+            return;
+        }
+
+        try {
+            const apikey = localStorage.getItem('aa_apikey');
+            console.log('[AccountPanel] Disconnect - API key:', apikey ? 'Found' : 'Not found');
+            
+            if (!apikey) {
+                if (showToast) showToast('No active session found', 'warning');
+                return;
+            }
+
+            // Clear localStorage FIRST to stop all polling immediately
+            localStorage.removeItem('aa_apikey');
+            localStorage.removeItem('aa_broker');
+            localStorage.removeItem('aa_client_id');
+
+            // Call logout endpoint (with saved apikey)
+            console.log('[AccountPanel] Calling logout endpoint...');
+            const response = await fetch('http://127.0.0.1:8000/api/v1/auth/logout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ apikey })
+            });
+
+            console.log('[AccountPanel] Logout response status:', response.status);
+            const result = await response.json();
+            console.log('[AccountPanel] Logout result:', result);
+
+            if (result.status === 'success') {
+                if (showToast) showToast('Disconnected successfully', 'success');
+            } else {
+                console.warn('[AccountPanel] Logout warning:', result.message);
+            }
+
+            // Reload page to reset state (regardless of logout API result)
+            window.location.reload();
+        } catch (error) {
+            console.error('[AccountPanel] Disconnect error:', error);
+            // Still reload even if logout API fails - localStorage is already cleared
+            window.location.reload();
+        }
+    }, [showToast]);
+
     // Refresh function - uses OrderContext refresh + fetches broker info
     const fetchAccountData = useCallback(async () => {
         if (!isAuthenticated) return;
@@ -174,82 +221,62 @@ const AccountPanel = ({
     useEffect(() => {
         // Only subscribe if panel is open, authenticated, and we have positions
         if (!isOpen || !isAuthenticated || !positions || positions.length === 0) {
-            // Cleanup previous subscription
-            if (typeof wsUnsubscribeRef.current === 'function') {
-                wsUnsubscribeRef.current();
-                wsUnsubscribeRef.current = null;
-                setIsWebSocketConnected(false);
-            }
+            setIsWebSocketConnected(false);
             return;
         }
 
         // Get open positions (quantity !== 0)
         const openPositions = positions.filter(p => p.quantity !== 0);
         if (openPositions.length === 0) {
-            if (typeof wsUnsubscribeRef.current === 'function') {
-                wsUnsubscribeRef.current();
-                wsUnsubscribeRef.current = null;
-                setIsWebSocketConnected(false);
-            }
+            setIsWebSocketConnected(false);
             return;
         }
 
-        // Cleanup previous subscription before creating new one
-        if (typeof wsUnsubscribeRef.current === 'function') {
-            wsUnsubscribeRef.current();
-        }
+        console.log('[AccountPanel] Subscribing to WebSocket for', openPositions.length, 'positions');
 
-        // Create subscription array
-        const subscriptions = openPositions.map(pos => ({
-            symbol: pos.symbol,
-            exchange: pos.exchange || 'NSE'
-        }));
+        // Subscribe to each position using wsManager
+        openPositions.forEach(pos => {
+            const symbol = pos.symbol;
+            const exchange = pos.exchange || 'NSE';
+            
+            wsManager.subscribe(symbol, exchange, (tickData) => {
+                // Update position with new LTP
+                setPositions(prevPositions => {
+                    return prevPositions.map(p => {
+                        if (p.symbol === symbol && p.exchange === exchange) {
+                            const newLtp = tickData.ltp || tickData.last || 0;
+                            const qty = parseFloat(p.quantity || 0);
+                            const avgPrice = parseFloat(p.average_price || 0);
 
-        console.log('[AccountPanel] Subscribing to WebSocket for', subscriptions.length, 'positions');
+                            // Calculate new P&L
+                            const newPnl = (newLtp - avgPrice) * qty;
 
-        // Subscribe to WebSocket
-        const unsubscribe = subscribeToMultiTicker(subscriptions, (tickData) => {
-            // Update position with new LTP
-            setPositions(prevPositions => {
-                return prevPositions.map(pos => {
-                    if (pos.symbol === tickData.symbol && pos.exchange === tickData.exchange) {
-                        const newLtp = tickData.last;
-                        const qty = parseFloat(pos.quantity || 0);
-                        const avgPrice = parseFloat(pos.average_price || 0);
+                            // Mark update time for pulse animation
+                            setLastUpdateTime(prev => ({
+                                ...prev,
+                                [`${p.symbol}-${p.exchange}`]: Date.now()
+                            }));
 
-                        // Calculate new P&L
-                        const newPnl = (newLtp - avgPrice) * qty;
-
-                        // Mark update time for pulse animation
-                        setLastUpdateTime(prev => ({
-                            ...prev,
-                            [`${pos.symbol}-${pos.exchange}`]: Date.now()
-                        }));
-
-                        return {
-                            ...pos,
-                            ltp: newLtp,
-                            pnl: newPnl
-                        };
-                    }
-                    return pos;
+                            return {
+                                ...p,
+                                ltp: newLtp,
+                                pnl: newPnl
+                            };
+                        }
+                        return p;
+                    });
                 });
-            });
 
-            // Mark as connected on first update
-            setIsWebSocketConnected(true);
+                // Mark as connected on first update
+                setIsWebSocketConnected(true);
+            }, 2); // mode 2 = Quote mode
         });
 
-        wsUnsubscribeRef.current = unsubscribe;
         setIsWebSocketConnected(true);
 
-        // Cleanup on unmount
+        // Cleanup: wsManager handles unsubscription internally when callbacks are removed
         return () => {
-            if (typeof wsUnsubscribeRef.current === 'function') {
-                wsUnsubscribeRef.current();
-                wsUnsubscribeRef.current = null;
-                setIsWebSocketConnected(false);
-            }
+            setIsWebSocketConnected(false);
         };
     }, [isOpen, isAuthenticated, positions.map(p => `${p.symbol}-${p.exchange}`).join(',')]);
 
@@ -1062,6 +1089,14 @@ const AccountPanel = ({
                 </div>
 
                 <div className={styles.headerRight} style={{ position: 'relative' }}>
+                    <button
+                        className={styles.disconnectBtn}
+                        onClick={handleDisconnect}
+                        title="Disconnect broker"
+                    >
+                        <LogOut size={14} />
+                        <span>Disconnect</span>
+                    </button>
                     <button
                         className={styles.refreshBtn}
                         onClick={fetchAccountData}

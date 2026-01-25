@@ -36,6 +36,8 @@ async def get_option_chain(
     
     Returns option chain with ATM identification and CE/PE data.
     """
+    logger.info(f"Option chain request: {request.underlying} on {request.exchange}, expiry={request.expiry}, strikes={request.strike_count}")
+    
     # Validate API key
     auth_service = AuthService(db)
     session = await auth_service.validate_session(request.apikey)
@@ -43,8 +45,8 @@ async def get_option_chain(
     # Get broker for session
     broker = await auth_service.get_broker_for_session(session)
     
-    # Create option service
-    option_service = OptionService(broker)
+    # Create option service with database session
+    option_service = OptionService(broker, db)
     
     try:
         chain = await option_service.get_option_chain(

@@ -67,7 +67,7 @@ async def get_history(
             for c in candles
         ]
         
-        logger.debug(f"History: {request.symbol} returned {len(data)} candles")
+        logger.info(f"History: {request.symbol} returned {len(data)} candles")
         
         return HistoryResponse(
             status="success",
@@ -76,6 +76,19 @@ async def get_history(
         
     except Exception as e:
         logger.error(f"History error for {request.symbol}: {e}")
+        
+        # Check for rate limits in error message
+        msg = str(e).lower()
+        if "rate" in msg and ("limit" in msg or "exceed" in msg) or "429" in msg or "403" in msg:
+             raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={
+                    "status": "error",
+                    "code": "RATE_LIMITED",
+                    "message": "Broker rate limit exceeded. Please wait."
+                }
+            )
+            
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={

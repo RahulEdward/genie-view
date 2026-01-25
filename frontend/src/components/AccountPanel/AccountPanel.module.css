@@ -96,6 +96,7 @@
 }
 
 .refreshBtn,
+.disconnectBtn,
 .closeBtn {
   display: flex;
   align-items: center;
@@ -108,6 +109,23 @@
   color: var(--tv-color-text-secondary);
   cursor: pointer;
   transition: all 0.15s ease;
+}
+
+.disconnectBtn {
+  width: auto;
+  padding: 0 8px;
+  gap: 4px;
+  font-size: 12px;
+  color: #ef5350;
+}
+
+.disconnectBtn:hover {
+  background-color: rgba(239, 83, 80, 0.1);
+  color: #ef5350;
+}
+
+.disconnectBtn span {
+  display: inline;
 }
 
 .refreshBtn:hover,

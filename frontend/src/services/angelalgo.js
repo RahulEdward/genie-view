@@ -1332,9 +1332,9 @@ export const getOptionChain = async (underlying, exchange = 'NFO', expiryDate = 
             strike_count: strikeCount
         };
 
-        // Add expiry_date if specified
+        // Add expiry if specified (backend expects 'expiry', not 'expiry_date')
         if (expiryDate) {
-            requestBody.expiry_date = expiryDate;
+            requestBody.expiry = expiryDate;
         }
 
         logger.debug('[AngelAlgo] Option Chain request:', requestBody);
@@ -1366,15 +1366,15 @@ export const getOptionChain = async (underlying, exchange = 'NFO', expiryDate = 
         const data = await response.json();
         logger.debug('[AngelAlgo] Option Chain response:', data);
 
-        // Response format: { status, underlying, underlying_ltp, expiry_date, atm_strike, chain: [...] }
-        if (data && data.status === 'success') {
+        // Response format: { status: "success", data: { underlying, underlyingLTP, ... } }
+        if (data && data.status === 'success' && data.data) {
             return {
-                underlying: data.underlying,
-                underlyingLTP: parseFloat(data.underlying_ltp || 0),
-                underlyingPrevClose: parseFloat(data.underlying_prev_close || 0),
-                expiryDate: data.expiry_date,
-                atmStrike: parseFloat(data.atm_strike || 0),
-                chain: data.chain || []
+                underlying: data.data.underlying,
+                underlyingLTP: parseFloat(data.data.underlyingLTP || 0),
+                underlyingPrevClose: parseFloat(data.data.underlyingPrevClose || 0),
+                expiryDate: data.data.expiryDate,
+                atmStrike: parseFloat(data.data.atmStrike || 0),
+                chain: data.data.chain || []
             };
         }
 
@@ -1653,6 +1653,10 @@ export const getFunds = async () => {
         });
 
         if (!response.ok) {
+            // Silently handle 401 (session expired/logged out)
+            if (response.status === 401) {
+                return null;
+            }
             logger.warn('[AngelAlgo] Funds API failed:', response.status);
             return null;
         }
@@ -1663,7 +1667,10 @@ export const getFunds = async () => {
         }
         return null;
     } catch (error) {
-        console.error('[AngelAlgo] Funds error:', error);
+        // Don't log errors if API key is missing (user logged out)
+        if (getApiKey()) {
+            console.error('[AngelAlgo] Funds error:', error);
+        }
         return null;
     }
 };
@@ -1685,6 +1692,10 @@ export const getPositionBook = async () => {
         });
 
         if (!response.ok) {
+            // Silently handle 401 (session expired/logged out)
+            if (response.status === 401) {
+                return [];
+            }
             logger.warn('[AngelAlgo] PositionBook API failed:', response.status);
             return [];
         }
@@ -1695,7 +1706,10 @@ export const getPositionBook = async () => {
         }
         return [];
     } catch (error) {
-        console.error('[AngelAlgo] PositionBook error:', error);
+        // Don't log errors if API key is missing (user logged out)
+        if (getApiKey()) {
+            console.error('[AngelAlgo] PositionBook error:', error);
+        }
         return [];
     }
 };
@@ -1717,6 +1731,10 @@ export const getOrderBook = async () => {
         });
 
         if (!response.ok) {
+            // Silently handle 401 (session expired/logged out)
+            if (response.status === 401) {
+                return { orders: [], statistics: {} };
+            }
             logger.warn('[AngelAlgo] OrderBook API failed:', response.status);
             return { orders: [], statistics: {} };
         }
@@ -1727,7 +1745,10 @@ export const getOrderBook = async () => {
         }
         return { orders: [], statistics: {} };
     } catch (error) {
-        console.error('[AngelAlgo] OrderBook error:', error);
+        // Don't log errors if API key is missing (user logged out)
+        if (getApiKey()) {
+            console.error('[AngelAlgo] OrderBook error:', error);
+        }
         return { orders: [], statistics: {} };
     }
 };
@@ -1749,6 +1770,10 @@ export const getTradeBook = async () => {
         });
 
         if (!response.ok) {
+            // Silently handle 401 (session expired/logged out)
+            if (response.status === 401) {
+                return [];
+            }
             logger.warn('[AngelAlgo] TradeBook API failed:', response.status);
             return [];
         }
@@ -1759,7 +1784,10 @@ export const getTradeBook = async () => {
         }
         return [];
     } catch (error) {
-        console.error('[AngelAlgo] TradeBook error:', error);
+        // Don't log errors if API key is missing (user logged out)
+        if (getApiKey()) {
+            console.error('[AngelAlgo] TradeBook error:', error);
+        }
         return [];
     }
 };
@@ -1781,6 +1809,10 @@ export const getHoldings = async () => {
         });
 
         if (!response.ok) {
+            // Silently handle 401 (session expired/logged out)
+            if (response.status === 401) {
+                return { holdings: [], statistics: {} };
+            }
             logger.warn('[AngelAlgo] Holdings API failed:', response.status);
             return { holdings: [], statistics: {} };
         }
@@ -1791,7 +1823,10 @@ export const getHoldings = async () => {
         }
         return { holdings: [], statistics: {} };
     } catch (error) {
-        console.error('[AngelAlgo] Holdings error:', error);
+        // Don't log errors if API key is missing (user logged out)
+        if (getApiKey()) {
+            console.error('[AngelAlgo] Holdings error:', error);
+        }
         return { holdings: [], statistics: {} };
     }
 };

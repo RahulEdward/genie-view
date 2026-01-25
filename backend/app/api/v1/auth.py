@@ -3,19 +3,31 @@ Authentication Endpoints
 Login and logout endpoints for broker authentication
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.services.auth import AuthService
 from app.models.schemas import (
-    LoginRequest, LoginResponse, BaseResponse, ErrorResponse, SavedCredentialsResponse
+    LoginRequest, LoginResponse, BaseResponse, ErrorResponse, SavedCredentialsResponse, VerifyRequest
 )
-from app.api.deps import get_api_key
+from app.api.deps import get_api_key, get_api_key_flexible
 from app.api.exceptions import AuthenticationError
 from app.utils.logger import logger
 
 router = APIRouter()
+
+
+@router.post("/verify-session", response_model=BaseResponse)
+async def verify_session(
+    request: VerifyRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Verify session validity"""
+    auth_service = AuthService(db)
+    await auth_service.validate_session(request.apikey)
+    return BaseResponse(status="success")
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -81,16 +93,38 @@ async def login(
 
 @router.post("/logout", response_model=BaseResponse)
 async def logout(
-    api_key: str = Depends(get_api_key),
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """
     Logout and invalidate session.
     
-    Requires X-API-Key header with valid API key.
+    Accepts API key from:
+    - X-API-Key header (preferred)
+    - apikey in JSON body (for compatibility)
     """
-    auth_service = AuthService(db)
+    # Try to get from header first
+    api_key = request.headers.get("X-API-Key")
     
+    # If not in header, try body
+    if not api_key:
+        try:
+            body = await request.json()
+            api_key = body.get("apikey")
+        except:
+            pass
+    
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "status": "error",
+                "code": "AUTH_FAILED",
+                "message": "API key required in header or body"
+            }
+        )
+    
+    auth_service = AuthService(db)
     success = await auth_service.logout(api_key)
     
     if success:

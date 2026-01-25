@@ -12,7 +12,9 @@ import OHLCHeader from './OHLCHeader';
 import ChartContextMenu from './ChartContextMenu';
 import IndicatorSettingsDialog from '../IndicatorSettings/IndicatorSettingsDialog';
 import { getIndicatorConfig } from '../IndicatorSettings/indicatorConfigs';
-import { getKlines, getHistoricalKlines, subscribeToTicker, saveDrawings, loadDrawings } from '../../services/angelalgo';
+import { saveDrawings, loadDrawings } from '../../services/angelalgo';
+import { getHistoricalData } from '../../services/marketDataService';
+import { wsManager } from '../../services/websocketManager';
 import { combineMultiLegOHLC } from '../../services/optionChain';
 import { getAccurateISTTimestamp, syncTimeWithAPI, shouldResync } from '../../services/timeService';
 import {
@@ -1465,13 +1467,12 @@ const ChartComponent = forwardRef(({
                 }
                 abortControllerRef.current = new AbortController();
 
-                const olderData = await getHistoricalKlines(
+                const olderData = await getHistoricalData(
                     currentSymbol,
                     currentExchange,
                     currentInterval,
                     formatDate(startDate),
-                    formatDate(endDate),
-                    abortControllerRef.current.signal
+                    formatDate(endDate)
                 );
 
                 if (!olderData || olderData.length === 0) {
@@ -1880,10 +1881,22 @@ const ChartComponent = forwardRef(({
 
                 // Check if we're in strategy mode (multi-leg)
                 if (strategyConfig && strategyConfig.legs?.length >= 2) {
-                    // Fetch all leg data in parallel
+                    // Fetch all leg data in parallel using new marketDataService
                     const strategyExchange = strategyConfig.exchange || 'NFO';
+                    
+                    // Calculate date range (last 30 days for now)
+                    const endDate = new Date();
+                    const startDate = new Date();
+                    startDate.setDate(startDate.getDate() - 30);
+                    
                     const legDataPromises = strategyConfig.legs.map(leg =>
-                        getKlines(leg.symbol, strategyExchange, interval, 1000, abortController.signal)
+                        getHistoricalData(
+                            leg.symbol, 
+                            strategyExchange, 
+                            interval, 
+                            startDate.toISOString().split('T')[0],
+                            endDate.toISOString().split('T')[0]
+                        )
                     );
                     const legDataArrays = await Promise.all(legDataPromises);
 
@@ -1899,8 +1912,18 @@ const ChartComponent = forwardRef(({
                     data = combineMultiLegOHLC(legDataArrays, strategyConfig.legs);
                     logger.debug('[Strategy] Combined data length:', data.length, 'from', strategyConfig.legs.length, 'legs');
                 } else {
-                    // Regular symbol mode
-                    data = await getKlines(symbol, exchange, interval, 1000, abortController.signal);
+                    // Regular symbol mode - use new marketDataService
+                    const endDate = new Date();
+                    const startDate = new Date();
+                    startDate.setDate(startDate.getDate() - 30); // Last 30 days
+                    
+                    data = await getHistoricalData(
+                        symbol, 
+                        exchange, 
+                        interval, 
+                        startDate.toISOString().split('T')[0],
+                        endDate.toISOString().split('T')[0]
+                    );
                 }
                 if (cancelled) return;
 
@@ -2041,12 +2064,12 @@ const ChartComponent = forwardRef(({
                             );
                         });
                     } else {
-                        // Regular symbol mode
-                        wsRef.current = subscribeToTicker(symbol, exchange, interval, (ticker) => {
+                        // Regular symbol mode - use new wsManager
+                        const handleTick = (ticker) => {
                             if (cancelled || !ticker) return;
 
                             // Extract price and volume from real-time tick data
-                            const closePrice = Number(ticker.close);
+                            const closePrice = Number(ticker.ltp || ticker.close);
                             const tickVolume = Number(ticker.volume) || 0;
                             if (!Number.isFinite(closePrice) || closePrice <= 0) {
                                 console.warn('Received invalid close price:', ticker);
@@ -2149,7 +2172,11 @@ const ChartComponent = forwardRef(({
                                     priceScaleTimerRef.current.updateCandleData(candle.open, candle.close);
                                 }
                             }
-                        });
+                        };
+                        
+                        // Subscribe using new wsManager
+                        wsManager.subscribe(symbol, exchange, handleTick);
+                        wsRef.current = { unsubscribe: () => wsManager.unsubscribe(symbol, exchange, handleTick) };
                     }
                 } else {
                     dataRef.current = [];
@@ -2200,12 +2227,15 @@ const ChartComponent = forwardRef(({
             }
             abortController.abort();
             if (wsRef.current) {
-                wsRef.current.close();
+                // Unsubscribe using new wsManager
+                if (wsRef.current.unsubscribe) {
+                    wsRef.current.unsubscribe();
+                }
                 wsRef.current = null;
             }
             // Clean up strategy WebSocket connections (N-leg support)
             Object.values(strategyWsRefs.current).forEach(ws => {
-                if (ws) ws.close();
+                if (ws && ws.close) ws.close();
             });
             strategyWsRefs.current = {};
             // Reset strategy state
@@ -3046,7 +3076,19 @@ const ChartComponent = forwardRef(({
             activeSeries.set(comp.symbol, series);
 
             try {
-                const data = await getKlines(comp.symbol, comp.exchange || 'NSE', interval, 1000, abortController.signal);
+                // Calculate date range for comparison data
+                const endDate = new Date();
+                const startDate = new Date();
+                startDate.setDate(startDate.getDate() - 30); // Last 30 days
+                
+                const data = await getHistoricalData(
+                    comp.symbol, 
+                    comp.exchange || 'NSE', 
+                    interval, 
+                    startDate.toISOString().split('T')[0],
+                    endDate.toISOString().split('T')[0]
+                );
+                
                 // Check if still valid before setting data
                 if (cancelled || !activeSeries.has(comp.symbol)) return;
                 if (data && data.length > 0) {
