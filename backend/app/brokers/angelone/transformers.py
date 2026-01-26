@@ -86,12 +86,14 @@ def transform_quote_data(
         low_px = float(item.get("low", 0))
         prev_close = float(item.get("close", item.get("prevClose", 0)))
         volume = int(item.get("tradeVolume", item.get("volume", 0)))
+        oi = int(item.get("opninterest", item.get("oi", 0)))  # Open Interest
     except (ValueError, TypeError):
         open_px = 0.0
         high_px = 0.0
         low_px = 0.0
         prev_close = 0.0
         volume = 0
+        oi = 0
     
     return Quote(
         symbol=symbol,
@@ -102,6 +104,7 @@ def transform_quote_data(
         low=low_px,
         prev_close=prev_close,
         volume=volume,
+        oi=oi,
         timestamp=int(datetime.now().timestamp()),
         bid=float(item.get("depth", {}).get("buy", [{}])[0].get("price", 0)) if item.get("depth") and item.get("depth", {}).get("buy") else None,
         ask=float(item.get("depth", {}).get("sell", [{}])[0].get("price", 0)) if item.get("depth") and item.get("depth", {}).get("sell") else None,

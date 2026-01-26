@@ -20,6 +20,10 @@ export const useTradingData = (isAuthenticated) => {
 
     // Use refs to track if component is mounted to prevent state updates after unmount
     const isMounted = useRef(true);
+    // Track if a fetch is already in progress to prevent duplicate calls
+    const isFetching = useRef(false);
+    // Track last fetch time to prevent rapid successive calls
+    const lastFetchTime = useRef(0);
 
     useEffect(() => {
         isMounted.current = true;
@@ -144,20 +148,47 @@ export const useTradingData = (isAuthenticated) => {
     useEffect(() => {
         let intervalId;
 
+        // Helper to add delay between API calls to avoid rate limiting
+        const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
         const fetchData = async () => {
             // Check if authenticated AND API key exists
             const apiKey = localStorage.getItem('aa_apikey');
             if (!isAuthenticated || !apiKey) return;
 
+            // Prevent duplicate fetches - if already fetching, skip
+            if (isFetching.current) {
+                logger.debug('[useTradingData] Fetch already in progress, skipping');
+                return;
+            }
+
+            // Prevent rapid successive calls - minimum 5 seconds between fetches
+            const now = Date.now();
+            if (now - lastFetchTime.current < 5000) {
+                logger.debug('[useTradingData] Too soon since last fetch, skipping');
+                return;
+            }
+
+            isFetching.current = true;
+            lastFetchTime.current = now;
+
             try {
-                // Fetch all data in parallel
-                const [posData, orderData, fundsData, holdingsData, tradeData] = await Promise.all([
-                    getPositionBook(),
-                    getOrderBook(),
-                    getFunds(),
-                    getHoldings(),
-                    getTradeBook()
-                ]);
+                // Fetch data sequentially with delays to avoid Angel One rate limits
+                // Angel One has ~25-30 requests/minute limit (~2 requests per second max)
+                // Using 500ms delay between calls to stay well under the limit
+                const posData = await getPositionBook();
+                await delay(500);
+                
+                const orderData = await getOrderBook();
+                await delay(500);
+                
+                const fundsData = await getFunds();
+                await delay(500);
+                
+                const holdingsData = await getHoldings();
+                await delay(500);
+                
+                const tradeData = await getTradeBook();
 
                 if (!isMounted.current) return;
 
@@ -203,6 +234,8 @@ export const useTradingData = (isAuthenticated) => {
 
             } catch (error) {
                 console.error("Error fetching trading data:", error);
+            } finally {
+                isFetching.current = false;
             }
         };
 
@@ -221,14 +254,41 @@ export const useTradingData = (isAuthenticated) => {
         const apiKey = localStorage.getItem('aa_apikey');
         if (!isAuthenticated || !apiKey) return;
 
+        // Prevent duplicate fetches
+        if (isFetching.current) {
+            logger.debug('[useTradingData] Manual refresh skipped - fetch in progress');
+            return;
+        }
+
+        // Prevent rapid successive calls - minimum 3 seconds between manual refreshes
+        const now = Date.now();
+        if (now - lastFetchTime.current < 3000) {
+            logger.debug('[useTradingData] Manual refresh skipped - too soon');
+            return;
+        }
+
+        isFetching.current = true;
+        lastFetchTime.current = now;
+
+        // Helper to add delay between API calls
+        const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
         try {
-            const [posData, orderData, fundsData, holdingsData, tradeData] = await Promise.all([
-                getPositionBook(),
-                getOrderBook(),
-                getFunds(),
-                getHoldings(),
-                getTradeBook()
-            ]);
+            // Fetch data sequentially with delays to avoid rate limits
+            // Using 500ms delay between calls to stay well under Angel One's limit
+            const posData = await getPositionBook();
+            await delay(500);
+            
+            const orderData = await getOrderBook();
+            await delay(500);
+            
+            const fundsData = await getFunds();
+            await delay(500);
+            
+            const holdingsData = await getHoldings();
+            await delay(500);
+            
+            const tradeData = await getTradeBook();
 
             if (!isMounted.current) return;
 
@@ -255,6 +315,8 @@ export const useTradingData = (isAuthenticated) => {
 
         } catch (error) {
             console.error("Error refreshing trading data:", error);
+        } finally {
+            isFetching.current = false;
         }
     };
 

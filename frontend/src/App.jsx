@@ -48,6 +48,7 @@ import AccountPanel from './components/AccountPanel';
 import TradingPanel from './components/TradingPanel/TradingPanel';
 import ChartTemplatesDialog from './components/ChartTemplates/ChartTemplatesDialog';
 import ShortcutsSettings from './components/ShortcutsSettings/ShortcutsSettings';
+import ANNScanner from './components/ANNScanner';
 
 const VALID_INTERVAL_UNITS = new Set(['s', 'm', 'h', 'd', 'w', 'M']);
 const DEFAULT_FAVORITE_INTERVALS = []; // No default favorites
@@ -3148,6 +3149,17 @@ function AppContent({ isAuthenticated, setIsAuthenticated }) {
               isOpen={true}
               onClose={() => setActiveRightPanel('watchlist')}
               showToast={showToast}
+            />
+          ) : activeRightPanel === 'ann_scanner' ? (
+            <ANNScanner
+              onSymbolSelect={(symData) => {
+                const symbol = typeof symData === 'string' ? symData : symData.symbol;
+                const exchange = typeof symData === 'string' ? 'NSE' : (symData.exchange || 'NSE');
+                setCharts(prev => prev.map(chart =>
+                  chart.id === activeChartId ? { ...chart, symbol: symbol, exchange: exchange, strategyConfig: null } : chart
+                ));
+              }}
+              onClose={() => setActiveRightPanel('watchlist')}
             />
           ) : null
         }

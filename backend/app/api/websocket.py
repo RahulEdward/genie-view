@@ -130,8 +130,8 @@ async def websocket_endpoint(
         # Connect broker feed if not connected
         if not broker_feed.is_connected:
             connected = await broker_feed.connect()
-            if connected:
-                # Start feed in background
+            if connected and not broker_feed.is_running:
+                # Start feed in background only if not already running
                 asyncio.create_task(broker_feed.run())
         
         # Message handling loop

@@ -36,6 +36,7 @@ class Quote(BaseModel):
     ask: Optional[float] = None
     bid_qty: Optional[int] = None
     ask_qty: Optional[int] = None
+    oi: Optional[int] = None  # Open Interest for derivatives
 
 
 class OptionData(BaseModel):

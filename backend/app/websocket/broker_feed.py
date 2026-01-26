@@ -48,6 +48,7 @@ class BrokerFeed:
         self._ws: Optional[websockets.WebSocketClientProtocol] = None
         self._connected = False
         self._running = False
+        self._run_task: Optional[asyncio.Task] = None  # Track the run task
         self._reconnect_attempts = 0
         self._max_reconnect_attempts = 5
         self._reconnect_delay = 5  # seconds
@@ -236,6 +237,11 @@ class BrokerFeed:
         
         Runs until disconnect() is called.
         """
+        # Prevent multiple run() calls on the same instance
+        if self._running:
+            logger.warning(f"Broker feed already running for {self.client_id}")
+            return
+        
         self._running = True
         
         while self._running:
@@ -386,6 +392,11 @@ class BrokerFeed:
         logger.info(f"Reconnecting in {delay} seconds (attempt {self._reconnect_attempts})")
         
         await asyncio.sleep(delay)
+    
+    @property
+    def is_running(self) -> bool:
+        """Check if run loop is active"""
+        return self._running
     
     @property
     def is_connected(self) -> bool:

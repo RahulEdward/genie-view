@@ -437,3 +437,238 @@ async def cancel_order(
     except Exception as e:
         logger.error(f"Error cancelling order: {e}")
         return {"status": "error", "message": str(e)}
+
+
+@router.post("/optiongreeks")
+async def get_option_greeks(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get option Greeks for a single option (OpenAlgo compatibility)"""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    
+    api_key = body.get("apikey")
+    symbol = body.get("symbol")
+    exchange = body.get("exchange", "NFO")
+    
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "API key required"}
+        )
+    
+    if not symbol:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"status": "error", "code": "INVALID_REQUEST", "message": "Symbol required"}
+        )
+    
+    # Validate API key
+    auth_service = AuthService(db)
+    session = await auth_service.get_session(api_key)
+    
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "Invalid API key"}
+        )
+    
+    try:
+        broker = await auth_service.get_broker_for_session(session)
+        
+        # Get option quote
+        quote = await broker.get_quote(symbol, exchange)
+        
+        # Parse option details from symbol
+        from app.api.v1.greeks import _parse_option_symbol
+        option_info = _parse_option_symbol(symbol)
+        
+        if not option_info:
+            return {
+                "status": "error",
+                "message": "Could not parse option symbol"
+            }
+        
+        # Get underlying LTP
+        underlying_exchange = "NSE" if exchange == "NFO" else "BSE"
+        underlying_quote = await broker.get_quote(option_info["underlying"], underlying_exchange)
+        
+        # Calculate Greeks
+        from app.utils.greeks import calculate_greeks
+        greeks = calculate_greeks(
+            spot=underlying_quote.ltp,
+            strike=option_info["strike"],
+            expiry_days=option_info["days_to_expiry"],
+            rate=body.get("interest_rate", 0.07),
+            option_type=option_info["option_type"],
+            option_price=quote.ltp
+        )
+        
+        return {
+            "status": "success",
+            "symbol": symbol,
+            "exchange": exchange,
+            "underlying": option_info["underlying"],
+            "strike": option_info["strike"],
+            "option_type": option_info["option_type"],
+            "expiry_date": option_info["expiry"],
+            "days_to_expiry": option_info["days_to_expiry"],
+            "spot_price": underlying_quote.ltp,
+            "option_price": quote.ltp,
+            "implied_volatility": greeks.iv,
+            "greeks": {
+                "delta": greeks.delta,
+                "gamma": greeks.gamma,
+                "theta": greeks.theta,
+                "vega": greeks.vega,
+                "rho": 0.0  # Not calculated
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error calculating Greeks for {symbol}: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@router.post("/multioptiongreeks")
+async def get_multi_option_greeks(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get option Greeks for multiple options (OpenAlgo compatibility)"""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    
+    api_key = body.get("apikey")
+    symbols = body.get("symbols", [])
+    interest_rate = body.get("interest_rate", 0.07)
+    
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "API key required"}
+        )
+    
+    if not symbols:
+        return {
+            "status": "success",
+            "data": [],
+            "summary": {"total": 0, "success": 0, "failed": 0}
+        }
+    
+    # Validate API key
+    auth_service = AuthService(db)
+    session = await auth_service.get_session(api_key)
+    
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "code": "AUTH_FAILED", "message": "Invalid API key"}
+        )
+    
+    try:
+        broker = await auth_service.get_broker_for_session(session)
+        
+        results = []
+        success_count = 0
+        failed_count = 0
+        
+        # Cache underlying prices
+        underlying_prices = {}
+        
+        from app.api.v1.greeks import _parse_option_symbol
+        from app.utils.greeks import calculate_greeks
+        
+        for sym_info in symbols:
+            symbol = sym_info.get("symbol", "")
+            exchange = sym_info.get("exchange", "NFO")
+            
+            try:
+                # Get option quote
+                quote = await broker.get_quote(symbol, exchange)
+                
+                # Parse option details
+                option_info = _parse_option_symbol(symbol)
+                
+                if not option_info:
+                    results.append({
+                        "symbol": symbol,
+                        "status": "error",
+                        "error": "Could not parse option symbol"
+                    })
+                    failed_count += 1
+                    continue
+                
+                # Get underlying price (cached)
+                underlying = option_info["underlying"]
+                if underlying not in underlying_prices:
+                    underlying_exchange = "NSE" if exchange == "NFO" else "BSE"
+                    underlying_quote = await broker.get_quote(underlying, underlying_exchange)
+                    underlying_prices[underlying] = underlying_quote.ltp
+                
+                spot = underlying_prices[underlying]
+                
+                # Calculate Greeks
+                greeks = calculate_greeks(
+                    spot=spot,
+                    strike=option_info["strike"],
+                    expiry_days=option_info["days_to_expiry"],
+                    rate=interest_rate,
+                    option_type=option_info["option_type"],
+                    option_price=quote.ltp
+                )
+                
+                results.append({
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "status": "success",
+                    "underlying": option_info["underlying"],
+                    "strike": option_info["strike"],
+                    "option_type": option_info["option_type"],
+                    "expiry_date": option_info["expiry"],
+                    "days_to_expiry": option_info["days_to_expiry"],
+                    "spot_price": spot,
+                    "option_price": quote.ltp,
+                    "implied_volatility": greeks.iv,
+                    "greeks": {
+                        "delta": greeks.delta,
+                        "gamma": greeks.gamma,
+                        "theta": greeks.theta,
+                        "vega": greeks.vega,
+                        "rho": 0.0
+                    }
+                })
+                success_count += 1
+                
+            except Exception as e:
+                results.append({
+                    "symbol": symbol,
+                    "status": "error",
+                    "error": str(e)
+                })
+                failed_count += 1
+        
+        return {
+            "status": "success",
+            "data": results,
+            "summary": {
+                "total": len(symbols),
+                "success": success_count,
+                "failed": failed_count
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error calculating multi Greeks: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "data": [],
+            "summary": {"total": len(symbols), "success": 0, "failed": len(symbols)}
+        }
+

@@ -595,7 +595,7 @@ const getExpiriesFromSymbolSearch = async (underlying) => {
  */
 export const fetchOptionGreeks = async (symbol, exchange = 'NFO') => {
     try {
-        const data = await callBackendAPI('/greeks', { symbol, exchange });
+        const data = await callBackendAPI('/optiongreeks', { symbol, exchange });
         return data;
     } catch (error) {
         logger.error('[OptionChain] Greeks error:', error.message);
@@ -612,7 +612,7 @@ export const fetchOptionGreeks = async (symbol, exchange = 'NFO') => {
  */
 export const fetchMultiOptionGreeks = async (symbols, options = {}) => {
     try {
-        const data = await callBackendAPI('/greeks/batch', { symbols, ...options });
+        const data = await callBackendAPI('/multioptiongreeks', { symbols, ...options });
         return data;
     } catch (error) {
         logger.error('[OptionChain] Batch Greeks error:', error.message);
