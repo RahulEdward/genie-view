@@ -681,24 +681,33 @@ class AngelOneAdapter(BrokerAdapter):
     async def get_symbol_token(
         self,
         symbol: str,
-        exchange: str
+        exchange: str,
+        db: Optional[Any] = None
     ) -> Optional[str]:
-        """Get symbol token for a trading symbol"""
+        """
+        Get symbol token for a trading symbol.
+        
+        OPTIMIZED: Now queries database first to avoid rate limit errors.
+        Falls back to search API only if database lookup fails.
+        
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange code
+            db: Optional database session for direct lookup
+        """
         # Normalize inputs
         symbol = symbol.strip().upper()
         exchange = exchange.strip().upper()
         
         cache_key = f"{symbol}:{exchange}"
         
-        # Check cache
+        # Check cache first (fastest)
         if cache_key in self._symbol_cache:
             return self._symbol_cache[cache_key]
         
         # Check index symbols
-        # Map NSE_INDEX to NSE for checking if needed, but INDEX_SYMBOLS has specific keys
         if symbol in INDEX_SYMBOLS:
             idx_info = INDEX_SYMBOLS[symbol]
-            # Check if exchange matches or is mapped
             req_ex = EXCHANGE_MAP.get(exchange, exchange)
             idx_ex = EXCHANGE_MAP.get(idx_info["exchange"], idx_info["exchange"])
             
@@ -708,15 +717,34 @@ class AngelOneAdapter(BrokerAdapter):
                 return token
         
         # Check NSE equity tokens (fallback for common stocks)
-        # Verify exchange is NSE
         mapped_exchange = EXCHANGE_MAP.get(exchange, exchange)
         if mapped_exchange == "NSE" and symbol in NSE_EQUITY_TOKENS:
             token = NSE_EQUITY_TOKENS[symbol]
             self._symbol_cache[cache_key] = token
-            # logger.debug(f"Using cached token for {symbol}: {token}")
             return token
         
-        # Search for symbol via API
+        # Try database lookup first (NO API CALL - avoids rate limits!)
+        if db:
+            try:
+                from app.models.database import InstrumentMaster
+                from sqlalchemy import select
+                
+                result = await db.execute(
+                    select(InstrumentMaster.token).where(
+                        InstrumentMaster.symbol == symbol,
+                        InstrumentMaster.exchange == exchange
+                    ).limit(1)
+                )
+                row = result.scalar_one_or_none()
+                
+                if row:
+                    self._symbol_cache[cache_key] = row
+                    logger.debug(f"Token from DB for {symbol}:{exchange} = {row}")
+                    return row
+            except Exception as e:
+                logger.debug(f"DB lookup failed for {symbol}: {e}")
+        
+        # Fallback: Search API (only if database lookup failed)
         try:
             logger.debug(f"Searching API for token: {symbol}:{exchange}")
             results = await self.search_symbols(symbol, exchange)

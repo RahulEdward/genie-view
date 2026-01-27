@@ -3,6 +3,8 @@ AngelAlgo Compatible Endpoints
 Endpoints to match OpenAlgo API format for frontend compatibility
 """
 
+import asyncio
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, Dict, Any
@@ -13,6 +15,47 @@ from app.api.deps import get_api_key
 from app.utils.logger import logger
 
 router = APIRouter()
+
+# In-memory cache for account data (short TTL to reduce API calls)
+_account_cache: Dict[str, Dict[str, Any]] = {}
+_cache_ttl = 30  # 30 seconds cache for account data
+
+
+def _get_cached(client_id: str, key: str) -> Optional[Any]:
+    """Get cached data if not expired"""
+    cache_key = f"{client_id}:{key}"
+    if cache_key in _account_cache:
+        entry = _account_cache[cache_key]
+        if datetime.now() < entry["expires"]:
+            logger.debug(f"Cache hit for {cache_key}")
+            return entry["data"]
+        else:
+            del _account_cache[cache_key]
+    return None
+
+
+def _set_cached(client_id: str, key: str, data: Any, ttl: int = None):
+    """Set cached data with TTL"""
+    cache_key = f"{client_id}:{key}"
+    _account_cache[cache_key] = {
+        "data": data,
+        "expires": datetime.now() + timedelta(seconds=ttl or _cache_ttl)
+    }
+
+
+# Rate limiter for broker API calls
+_last_api_call: Dict[str, datetime] = {}
+_min_interval = 1.0  # Minimum 1 second between API calls per client
+
+
+async def _rate_limit(client_id: str):
+    """Simple rate limiter to prevent too many API calls"""
+    now = datetime.now()
+    if client_id in _last_api_call:
+        elapsed = (now - _last_api_call[client_id]).total_seconds()
+        if elapsed < _min_interval:
+            await asyncio.sleep(_min_interval - elapsed)
+    _last_api_call[client_id] = datetime.now()
 
 
 
@@ -105,7 +148,7 @@ async def get_positions(
     request: Request,
     db: AsyncSession = Depends(get_db)
 ):
-    """Get open positions (OpenAlgo compatibility)"""
+    """Get open positions (OpenAlgo compatibility) - with caching"""
     try:
         body = await request.json()
     except Exception:
@@ -129,9 +172,21 @@ async def get_positions(
             detail={"status": "error", "code": "AUTH_FAILED", "message": "Invalid API key"}
         )
     
+    # Check cache first
+    cached = _get_cached(session.client_id, "positions")
+    if cached is not None:
+        return {"status": "success", "data": cached}
+    
     try:
+        # Rate limit API calls
+        await _rate_limit(session.client_id)
+        
         broker = await auth_service.get_broker_for_session(session)
         positions = await broker.get_positions()
+        
+        # Cache the result
+        _set_cached(session.client_id, "positions", positions, ttl=30)
+        
         return {"status": "success", "data": positions}
     except Exception as e:
         logger.error(f"Error fetching positions: {e}")
@@ -143,7 +198,7 @@ async def get_orders(
     request: Request,
     db: AsyncSession = Depends(get_db)
 ):
-    """Get order book (OpenAlgo compatibility)"""
+    """Get order book (OpenAlgo compatibility) - with caching"""
     try:
         body = await request.json()
     except Exception:
@@ -167,9 +222,21 @@ async def get_orders(
             detail={"status": "error", "code": "AUTH_FAILED", "message": "Invalid API key"}
         )
     
+    # Check cache first
+    cached = _get_cached(session.client_id, "orders")
+    if cached is not None:
+        return {"status": "success", "data": {"orders": cached, "statistics": {}}}
+    
     try:
+        # Rate limit API calls
+        await _rate_limit(session.client_id)
+        
         broker = await auth_service.get_broker_for_session(session)
         orders = await broker.get_orders()
+        
+        # Cache the result
+        _set_cached(session.client_id, "orders", orders, ttl=15)  # Shorter TTL for orders
+        
         return {"status": "success", "data": {"orders": orders, "statistics": {}}}
     except Exception as e:
         logger.error(f"Error fetching orders: {e}")
@@ -181,7 +248,7 @@ async def get_funds(
     request: Request,
     db: AsyncSession = Depends(get_db)
 ):
-    """Get account funds (OpenAlgo compatibility)"""
+    """Get account funds (OpenAlgo compatibility) - with caching"""
     try:
         body = await request.json()
     except Exception:
@@ -205,9 +272,21 @@ async def get_funds(
             detail={"status": "error", "code": "AUTH_FAILED", "message": "Invalid API key"}
         )
     
+    # Check cache first
+    cached = _get_cached(session.client_id, "funds")
+    if cached is not None:
+        return {"status": "success", "data": cached}
+    
     try:
+        # Rate limit API calls
+        await _rate_limit(session.client_id)
+        
         broker = await auth_service.get_broker_for_session(session)
         funds = await broker.get_funds()
+        
+        # Cache the result
+        _set_cached(session.client_id, "funds", funds, ttl=60)  # Longer TTL for funds
+        
         return {"status": "success", "data": funds}
     except Exception as e:
         logger.error(f"Error fetching funds: {e}")
@@ -219,7 +298,7 @@ async def get_holdings(
     request: Request,
     db: AsyncSession = Depends(get_db)
 ):
-    """Get holdings (OpenAlgo compatibility)"""
+    """Get holdings (OpenAlgo compatibility) - with caching"""
     try:
         body = await request.json()
     except Exception:
@@ -243,9 +322,21 @@ async def get_holdings(
             detail={"status": "error", "code": "AUTH_FAILED", "message": "Invalid API key"}
         )
     
+    # Check cache first
+    cached = _get_cached(session.client_id, "holdings")
+    if cached is not None:
+        return {"status": "success", "data": {"holdings": cached, "statistics": {}}}
+    
     try:
+        # Rate limit API calls
+        await _rate_limit(session.client_id)
+        
         broker = await auth_service.get_broker_for_session(session)
         holdings = await broker.get_holdings()
+        
+        # Cache the result
+        _set_cached(session.client_id, "holdings", holdings, ttl=120)  # Longer TTL for holdings
+        
         return {"status": "success", "data": {"holdings": holdings, "statistics": {}}}
     except Exception as e:
         logger.error(f"Error fetching holdings: {e}")
@@ -257,7 +348,7 @@ async def get_trades(
     request: Request,
     db: AsyncSession = Depends(get_db)
 ):
-    """Get trade book (OpenAlgo compatibility)"""
+    """Get trade book (OpenAlgo compatibility) - with caching"""
     try:
         body = await request.json()
     except Exception:
@@ -281,9 +372,21 @@ async def get_trades(
             detail={"status": "error", "code": "AUTH_FAILED", "message": "Invalid API key"}
         )
     
+    # Check cache first
+    cached = _get_cached(session.client_id, "trades")
+    if cached is not None:
+        return {"status": "success", "data": cached}
+    
     try:
+        # Rate limit API calls
+        await _rate_limit(session.client_id)
+        
         broker = await auth_service.get_broker_for_session(session)
         trades = await broker.get_trades()
+        
+        # Cache the result
+        _set_cached(session.client_id, "trades", trades, ttl=30)
+        
         return {"status": "success", "data": trades}
     except Exception as e:
         logger.error(f"Error fetching trades: {e}")

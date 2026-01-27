@@ -8,8 +8,10 @@ import json
 from typing import Optional, List, Dict
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.db.session import get_db
+from app.models.database import InstrumentMaster
 from app.services.auth import AuthService
 from app.websocket.manager import ws_manager
 from app.websocket.broker_feed import get_or_create_feed, remove_feed
@@ -25,48 +27,111 @@ async def lookup_symbol_tokens(
     broker_name: str,
     broker_api_key: str,
     jwt_token: str,
-    client_id: str
+    client_id: str,
+    db: Optional[AsyncSession] = None
 ) -> List[Dict]:
     """
     Look up symbol tokens for subscription.
+    
+    OPTIMIZED: Uses database lookup first to avoid rate limit errors.
+    Only falls back to broker API if database lookup fails.
+    
     Returns symbols with tokens filled in.
     """
     result = []
+    symbols_needing_api_lookup = []
     
-    # Get broker adapter
-    broker = get_broker(broker_name, broker_api_key)
-    broker.set_tokens(
-        jwt_token=jwt_token,
-        refresh_token="",
-        feed_token="",
-        client_id=client_id
-    )
-    
-    for sym in symbols:
-        symbol = sym.get("symbol", "")
-        exchange = sym.get("exchange", "NSE")
-        token = sym.get("token", "")
-        
-        # If token not provided, look it up
-        if not token:
-            # Check index symbols first
+    # First pass: Try database lookup for all symbols (NO API CALLS)
+    if db:
+        for sym in symbols:
+            symbol = sym.get("symbol", "").strip().upper()
+            exchange = sym.get("exchange", "NSE").strip().upper()
+            token = sym.get("token", "")
+            
+            # If token already provided, use it
+            if token:
+                result.append({
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "token": token
+                })
+                continue
+            
+            # Check index symbols first (no DB needed)
             if symbol in INDEX_SYMBOLS:
-                token = INDEX_SYMBOLS[symbol]["token"]
-            else:
-                # Search for token
-                try:
-                    token = await broker.get_symbol_token(symbol, exchange)
-                except Exception as e:
-                    logger.warning(f"Failed to get token for {symbol}: {e}")
+                result.append({
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "token": INDEX_SYMBOLS[symbol]["token"]
+                })
+                continue
+            
+            # Try database lookup
+            try:
+                db_result = await db.execute(
+                    select(InstrumentMaster.token).where(
+                        InstrumentMaster.symbol == symbol,
+                        InstrumentMaster.exchange == exchange
+                    ).limit(1)
+                )
+                db_token = db_result.scalar_one_or_none()
+                
+                if db_token:
+                    result.append({
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "token": db_token
+                    })
+                    logger.debug(f"Token from DB: {symbol}:{exchange} = {db_token}")
+                else:
+                    # Mark for API lookup
+                    symbols_needing_api_lookup.append(sym)
+            except Exception as e:
+                logger.debug(f"DB lookup failed for {symbol}: {e}")
+                symbols_needing_api_lookup.append(sym)
+    else:
+        # No database session - all symbols need API lookup
+        symbols_needing_api_lookup = symbols
+    
+    # Second pass: API lookup for remaining symbols (with rate limiting)
+    if symbols_needing_api_lookup and broker_api_key:
+        broker = get_broker(broker_name, broker_api_key)
+        broker.set_tokens(
+            jwt_token=jwt_token,
+            refresh_token="",
+            feed_token="",
+            client_id=client_id
+        )
         
-        if token:
-            result.append({
-                "symbol": symbol,
-                "exchange": exchange,
-                "token": token
-            })
-        else:
-            logger.warning(f"No token found for {symbol}:{exchange}")
+        for sym in symbols_needing_api_lookup:
+            symbol = sym.get("symbol", "").strip().upper()
+            exchange = sym.get("exchange", "NSE").strip().upper()
+            
+            # Check index symbols
+            if symbol in INDEX_SYMBOLS:
+                result.append({
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "token": INDEX_SYMBOLS[symbol]["token"]
+                })
+                continue
+            
+            # Search for token via API (with rate limit risk)
+            try:
+                token = await broker.get_symbol_token(symbol, exchange, db)
+                if token:
+                    result.append({
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "token": token
+                    })
+                else:
+                    logger.warning(f"No token found for {symbol}:{exchange}")
+                
+                # Small delay to avoid rate limiting
+                await asyncio.sleep(0.1)
+            except Exception as e:
+                logger.warning(f"Failed to get token for {symbol}: {e}")
     
     return result
 
@@ -95,11 +160,15 @@ async def websocket_endpoint(
     connection_id = None
     broker_feed = None
     user_session = None
+    client_id = None
+    feed_token = None
+    broker_api_key = None
+    broker_name = None
     
     try:
         # Validate API key
-        db = get_db_session()
-        async with db as session:
+        db_context = get_db_session()
+        async with db_context as session:
             auth_service = AuthService(session)
             user_session = await auth_service.get_session(apikey)
             
@@ -109,8 +178,9 @@ async def websocket_endpoint(
             
             client_id = user_session.client_id
             feed_token = user_session.feed_token
-            broker_api_key = user_session.broker_api_key  # Use broker API key for WebSocket
+            broker_api_key = user_session.broker_api_key
             broker_name = user_session.broker
+            jwt_token = user_session.jwt_token
         
         # Connect client
         connection_id = await ws_manager.connect(websocket, apikey, client_id)
@@ -169,14 +239,17 @@ async def websocket_endpoint(
                         }]
                     
                     # Look up tokens for symbols that don't have them
+                    # Use database session for lookup to avoid rate limits
                     if symbols and broker_api_key:
-                        symbols_with_tokens = await lookup_symbol_tokens(
-                            symbols,
-                            broker_name,
-                            broker_api_key,
-                            user_session.jwt_token,
-                            client_id
-                        )
+                        async with get_db_session() as db_session:
+                            symbols_with_tokens = await lookup_symbol_tokens(
+                                symbols,
+                                broker_name,
+                                broker_api_key,
+                                jwt_token,
+                                client_id,
+                                db_session  # Pass DB session for database lookup
+                            )
                     else:
                         symbols_with_tokens = symbols
                     

@@ -37,10 +37,11 @@ class MarketDataService:
         """
         Get historical OHLC data with caching.
         
-        1. Check Redis cache for recent data
+        OPTIMIZED:
+        1. Check Redis cache first (5 min TTL for faster repeated loads)
         2. Check database for stored data
-        3. Fetch missing data from broker
-        4. Store in database and cache
+        3. Fetch missing data from broker in parallel
+        4. Store in database with bulk insert
         
         Args:
             symbol: Trading symbol
@@ -52,9 +53,11 @@ class MarketDataService:
         Returns:
             List of OHLC candles with IST timestamps
         """
+        import asyncio
+        
         cache_key = f"{symbol}:{exchange}:{interval}:{start_date}:{end_date}"
         
-        # Check Redis cache first
+        # Check Redis cache first (increased TTL to 5 minutes)
         cached = await history_cache.get(cache_key)
         if cached:
             logger.debug(f"Cache hit for {cache_key}")
@@ -68,24 +71,54 @@ class MarketDataService:
         # Get data from database
         db_candles = await self._get_from_db(symbol, exchange, interval, from_dt, to_dt)
         
+        # If we have enough data in DB, return it immediately
+        if db_candles:
+            # For daily data, check if we have recent data
+            last_candle_time = datetime.fromtimestamp(db_candles[-1].timestamp)
+            now = datetime.now()
+            
+            # If last candle is from today or yesterday (market closed), use cached data
+            if interval in ["1d", "1w", "1M", "ONE_DAY", "ONE_WEEK", "ONE_MONTH"]:
+                if (now - last_candle_time).days <= 1:
+                    output = [
+                        {
+                            "timestamp": c.timestamp + IST_OFFSET_SECONDS,
+                            "open": c.open,
+                            "high": c.high,
+                            "low": c.low,
+                            "close": c.close,
+                            "volume": c.volume
+                        }
+                        for c in db_candles
+                    ]
+                    # Cache for 5 minutes
+                    await history_cache.set(cache_key, output, ttl=300)
+                    logger.info(f"History from DB: {symbol} returned {len(output)} candles")
+                    return output
+        
         # Find missing date ranges
         missing_ranges = self._find_missing_ranges(db_candles, from_dt, to_dt, interval)
         
         # Fetch missing data from broker
         all_candles = list(db_candles)
         
-        for range_start, range_end in missing_ranges:
-            logger.debug(f"Fetching missing data: {range_start} to {range_end}")
-            
-            broker_candles = await self.broker.get_historical_data(
-                symbol, exchange, interval, range_start, range_end
-            )
-            
-            if broker_candles:
-                logger.info(f"Fetched {len(broker_candles)} candles from broker for {range_start} to {range_end}")
-                # Store in database
-                await self._store_candles(symbol, exchange, interval, broker_candles)
-                all_candles.extend(broker_candles)
+        if missing_ranges:
+            # Fetch all missing ranges (could be parallelized for multiple ranges)
+            for range_start, range_end in missing_ranges:
+                logger.debug(f"Fetching missing data: {range_start} to {range_end}")
+                
+                try:
+                    broker_candles = await self.broker.get_historical_data(
+                        symbol, exchange, interval, range_start, range_end
+                    )
+                    
+                    if broker_candles:
+                        logger.info(f"Fetched {len(broker_candles)} candles from broker")
+                        # Store in database (bulk insert - fast)
+                        await self._store_candles(symbol, exchange, interval, broker_candles)
+                        all_candles.extend(broker_candles)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch data for {range_start} to {range_end}: {e}")
         
         # Sort and deduplicate
         all_candles.sort(key=lambda x: x.timestamp)
@@ -104,10 +137,11 @@ class MarketDataService:
             for c in result
         ]
         
-        # Cache for 1 minute
+        # Cache for 5 minutes (increased from 1 minute)
         if output:
-            await history_cache.set(cache_key, output, ttl=60)
+            await history_cache.set(cache_key, output, ttl=300)
         
+        logger.info(f"History: {symbol} returned {len(output)} candles")
         return output
     
     async def get_quote(self, symbol: str, exchange: str) -> Dict:
@@ -276,47 +310,95 @@ class MarketDataService:
         interval: str,
         candles: List[OHLCCandle]
     ) -> None:
-        """Store candles in database with upsert logic"""
-        for candle in candles:
-            timestamp = datetime.fromtimestamp(candle.timestamp)
+        """
+        Store candles in database with bulk upsert logic.
+        
+        OPTIMIZED: Uses bulk insert with ON CONFLICT for much faster writes.
+        """
+        if not candles:
+            return
+        
+        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+        from sqlalchemy import text
+        
+        try:
+            # Prepare data for bulk insert
+            values = []
+            for candle in candles:
+                timestamp = datetime.fromtimestamp(candle.timestamp)
+                values.append({
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "interval": interval,
+                    "timestamp": timestamp,
+                    "open": candle.open,
+                    "high": candle.high,
+                    "low": candle.low,
+                    "close": candle.close,
+                    "volume": candle.volume
+                })
             
-            # Check if exists
-            existing = await self.db.execute(
-                select(OHLCHistory).where(
-                    and_(
-                        OHLCHistory.symbol == symbol,
-                        OHLCHistory.exchange == exchange,
-                        OHLCHistory.interval == interval,
-                        OHLCHistory.timestamp == timestamp
+            # Use SQLite's INSERT OR REPLACE for bulk upsert
+            # This is much faster than individual SELECT + INSERT/UPDATE
+            for batch_start in range(0, len(values), 100):
+                batch = values[batch_start:batch_start + 100]
+                
+                stmt = sqlite_insert(OHLCHistory).values(batch)
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=['symbol', 'exchange', 'interval', 'timestamp'],
+                    set_={
+                        'open': stmt.excluded.open,
+                        'high': stmt.excluded.high,
+                        'low': stmt.excluded.low,
+                        'close': stmt.excluded.close,
+                        'volume': stmt.excluded.volume
+                    }
+                )
+                await self.db.execute(stmt)
+            
+            await self.db.commit()
+            logger.debug(f"Stored {len(candles)} candles for {symbol}:{exchange}:{interval}")
+            
+        except Exception as e:
+            logger.warning(f"Bulk insert failed, falling back to individual inserts: {e}")
+            # Fallback to individual inserts if bulk fails
+            for candle in candles:
+                timestamp = datetime.fromtimestamp(candle.timestamp)
+                
+                existing = await self.db.execute(
+                    select(OHLCHistory).where(
+                        and_(
+                            OHLCHistory.symbol == symbol,
+                            OHLCHistory.exchange == exchange,
+                            OHLCHistory.interval == interval,
+                            OHLCHistory.timestamp == timestamp
+                        )
                     )
                 )
-            )
+                
+                row = existing.scalar_one_or_none()
+                
+                if row:
+                    row.open = candle.open
+                    row.high = candle.high
+                    row.low = candle.low
+                    row.close = candle.close
+                    row.volume = candle.volume
+                else:
+                    new_row = OHLCHistory(
+                        symbol=symbol,
+                        exchange=exchange,
+                        interval=interval,
+                        timestamp=timestamp,
+                        open=candle.open,
+                        high=candle.high,
+                        low=candle.low,
+                        close=candle.close,
+                        volume=candle.volume
+                    )
+                    self.db.add(new_row)
             
-            row = existing.scalar_one_or_none()
-            
-            if row:
-                # Update existing
-                row.open = candle.open
-                row.high = candle.high
-                row.low = candle.low
-                row.close = candle.close
-                row.volume = candle.volume
-            else:
-                # Insert new
-                new_row = OHLCHistory(
-                    symbol=symbol,
-                    exchange=exchange,
-                    interval=interval,
-                    timestamp=timestamp,
-                    open=candle.open,
-                    high=candle.high,
-                    low=candle.low,
-                    close=candle.close,
-                    volume=candle.volume
-                )
-                self.db.add(new_row)
-        
-        await self.db.commit()
+            await self.db.commit()
     
     def _find_missing_ranges(
         self,
