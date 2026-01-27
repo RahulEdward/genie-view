@@ -113,6 +113,7 @@ class SymbolService:
         Parse a single instrument record from the master file.
         
         Validates required fields and extracts option_type from symbol.
+        Applies transformations similar to OpenAlgo's master_contract_db.py
         
         Args:
             record: Raw instrument dictionary from JSON
@@ -135,25 +136,48 @@ class SymbolService:
             exchange = str(record["exch_seg"]).strip().upper()
             instrument_type = str(record.get("instrumenttype", "")).strip().upper()
             
+            # Normalize name for common indices
+            name_mapping = {
+                "NIFTY 50": "NIFTY",
+                "NIFTY NEXT 50": "NIFTYNXT50",
+                "NIFTY FIN SERVICE": "FINNIFTY",
+                "NIFTY BANK": "BANKNIFTY",
+                "NIFTY MID SELECT": "MIDCPNIFTY",
+                "INDIA VIX": "INDIAVIX",
+                "SNSX50": "SENSEX50",
+            }
+            name = name_mapping.get(name, name)
+            
             # Parse numeric fields with defaults
             try:
                 lot_size = int(record.get("lotsize", 1))
             except (ValueError, TypeError):
                 lot_size = 1
             
+            # Tick size is stored multiplied by 100 in Angel One
             try:
-                tick_size = float(record.get("tick_size", 0.05))
+                raw_tick = float(record.get("tick_size", 5))
+                tick_size = raw_tick / 100  # Convert to actual tick size
             except (ValueError, TypeError):
                 tick_size = 0.05
             
-            # Parse expiry (optional)
-            expiry = str(record.get("expiry", "")).strip().upper() if record.get("expiry") else None
+            # Parse expiry and convert format (19MAR2024 -> 19MAR2024, keep as is for DB)
+            expiry = None
+            if record.get("expiry"):
+                expiry = str(record["expiry"]).strip().upper()
             
             # Parse strike (optional)
+            # Angel One stores strikes multiplied by 100 (e.g., 2365000 for 23650)
+            # We divide by 100 to get the actual strike price
             strike = None
             if record.get("strike"):
                 try:
-                    strike = float(record["strike"])
+                    raw_strike = float(record["strike"])
+                    strike = raw_strike / 100  # Convert to actual strike price
+                    
+                    # Special handling for CDS options (currency) - divide by additional 1000
+                    if instrument_type in ["OPTCUR", "OPTIRC"] and exchange == "CDS":
+                        strike = strike / 1000
                 except (ValueError, TypeError):
                     pass
             
@@ -163,6 +187,15 @@ class SymbolService:
                 option_type = "CE"
             elif symbol.endswith("PE"):
                 option_type = "PE"
+            
+            # Normalize instrument_type for options to CE/PE
+            if instrument_type in ["OPTIDX", "OPTSTK", "OPTFUT", "OPTCUR", "OPTIRC"]:
+                if option_type:
+                    instrument_type = option_type
+            
+            # Normalize futures instrument types to FUT
+            if instrument_type in ["FUTIDX", "FUTSTK", "FUTCOM", "FUTCUR", "FUTIRC", "FUTIRT"]:
+                instrument_type = "FUT"
             
             # Create InstrumentMaster instance
             return InstrumentMaster(

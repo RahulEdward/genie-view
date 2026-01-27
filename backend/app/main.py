@@ -27,6 +27,28 @@ async def lifespan(app: FastAPI):
     await init_redis()
     logger.info("Redis cache initialized")
     
+    # Initialize instrument master (for option chain functionality)
+    try:
+        from app.db.session import async_session_maker
+        from app.brokers.angelone.adapter import AngelOneAdapter
+        from app.services.symbol import SymbolService
+        
+        logger.info("Initializing instrument master...")
+        broker = AngelOneAdapter(api_key="dummy")  # API key not needed for instrument master download
+        
+        async with async_session_maker() as db:
+            symbol_service = SymbolService(broker, db)
+            count = await symbol_service.refresh_master(force=False)  # Only refresh if stale
+            
+            if count > 0:
+                logger.info(f"Loaded {count} instruments into master")
+            else:
+                logger.info("Instrument master already up to date")
+                
+    except Exception as e:
+        logger.warning(f"Instrument master init skipped: {e}")
+        # Continue startup - option chain may be limited but app should work
+    
     yield
     
     # Shutdown
