@@ -35,11 +35,11 @@ async def get_greeks(
 ):
     """
     Calculate Greeks for a single option.
-    
+
     - **apikey**: API key from login
     - **symbol**: Option symbol (e.g., NIFTY30JAN2524000CE)
     - **exchange**: Exchange code (NFO, BFO)
-    
+
     Returns Delta, Gamma, Theta, Vega, and IV.
     """
     # Validate API key
@@ -48,11 +48,11 @@ async def get_greeks(
     
     # Get broker for session
     broker = await auth_service.get_broker_for_session(session)
-    
+
     try:
         # Get option quote
         quote = await broker.get_quote(request.symbol, request.exchange)
-        
+
         # Parse option details from symbol
         option_info = _parse_option_symbol(request.symbol)
         
@@ -65,13 +65,13 @@ async def get_greeks(
                     "message": "Could not parse option symbol"
                 }
             )
-        
+
         # Get underlying LTP
         underlying_quote = await broker.get_quote(
             option_info["underlying"],
             "NSE" if request.exchange == "NFO" else "BSE"
         )
-        
+
         # Calculate Greeks
         greeks = calculate_greeks(
             spot=underlying_quote.ltp,
@@ -89,14 +89,14 @@ async def get_greeks(
             vega=greeks.vega,
             iv=greeks.iv
         )
-        
+
         logger.debug(f"Greeks: {request.symbol} IV={data.iv}%")
-        
+
         return GreeksResponse(
             status="success",
             data=data
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -119,53 +119,53 @@ async def get_greeks_batch(
 ):
     """
     Calculate Greeks for multiple options.
-    
+
     - **apikey**: API key from login
     - **symbols**: List of {symbol, exchange} dicts
     - **interest_rate**: Optional risk-free rate (default 0.1 = 10%)
-    
+
     Returns list of Greeks for each option.
     """
     # Validate API key
     auth_service = AuthService(db)
     session = await auth_service.validate_session(request.apikey)
-    
+
     # Get broker for session
     broker = await auth_service.get_broker_for_session(session)
-    
+
     try:
         results = []
-        
+
         # Cache underlying prices
         underlying_prices = {}
-        
+
         for sym_info in request.symbols:
             symbol = sym_info.get("symbol", "")
             exchange = sym_info.get("exchange", "NFO")
-            
+
             try:
                 # Get option quote
                 quote = await broker.get_quote(symbol, exchange)
-                
+
                 # Parse option details
                 option_info = _parse_option_symbol(symbol)
-                
+
                 if not option_info:
                     results.append({
                         "symbol": symbol,
                         "error": "Could not parse option symbol"
                     })
                     continue
-                
+
                 # Get underlying price (cached)
                 underlying = option_info["underlying"]
                 if underlying not in underlying_prices:
                     underlying_exchange = "NSE" if exchange == "NFO" else "BSE"
                     underlying_quote = await broker.get_quote(underlying, underlying_exchange)
                     underlying_prices[underlying] = underlying_quote.ltp
-                
+
                 spot = underlying_prices[underlying]
-                
+
                 # Calculate Greeks
                 greeks = calculate_greeks(
                     spot=spot,
@@ -175,7 +175,7 @@ async def get_greeks_batch(
                     option_type=option_info["option_type"],
                     option_price=quote.ltp
                 )
-                
+
                 results.append({
                     "symbol": symbol,
                     "exchange": exchange,
@@ -185,18 +185,18 @@ async def get_greeks_batch(
                     "vega": greeks.vega,
                     "iv": greeks.iv
                 })
-                
+
             except Exception as e:
                 results.append({
                     "symbol": symbol,
                     "error": str(e)
                 })
-        
+
         return GreeksBatchResponse(
             status="success",
             data=results
         )
-        
+
     except Exception as e:
         logger.error(f"Batch Greeks error: {e}")
         raise HTTPException(
@@ -221,21 +221,31 @@ def _parse_option_symbol(symbol: str) -> Dict:
     """
     import re
     from datetime import datetime
-    
-    # Pattern for Indian option symbols
+
+    if not symbol:
+        return None
+
+    # Pattern for Indian option symbols: NIFTY30JAN2524000CE
+    # Group 1: Underlying (NIFTY, BANKNIFTY, etc.)
+    # Group 2: Day (30)
+    # Group 3: Month (JAN)
+    # Group 4: Year (25)
+    # Group 5: Strike (24000)
+    # Group 6: Option type (CE/PE)
     pattern = r'^([A-Z]+)(\d{2})([A-Z]{3})(\d{2})(\d+)(CE|PE)$'
+
     match = re.match(pattern, symbol.upper())
-    
+
     if not match:
         return None
-    
+
     underlying = match.group(1)
     day = match.group(2)
     month = match.group(3)
     year = match.group(4)
     strike = float(match.group(5))
     option_type = match.group(6)
-    
+
     # Calculate days to expiry
     try:
         expiry_str = f"{day}{month}{year}"
@@ -243,7 +253,7 @@ def _parse_option_symbol(symbol: str) -> Dict:
         days_to_expiry = max(1, (expiry_date - datetime.now()).days)
     except:
         days_to_expiry = 7  # Default
-    
+
     return {
         "underlying": underlying,
         "expiry": expiry_str,

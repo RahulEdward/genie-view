@@ -384,6 +384,7 @@ const OptionChainModal = ({ isOpen, onClose, onSelectOption, initialSymbol }) =>
 
     // Batch fetch Greeks when view mode changes to 'greeks'
     // Uses single batch API call for much faster loading
+    // Now passes LTP values to avoid rate limiting
     const fetchGreeks = useCallback(async () => {
         if (!optionChain?.chain?.length) return;
 
@@ -391,13 +392,28 @@ const OptionChainModal = ({ isOpen, onClose, onSelectOption, initialSymbol }) =>
         const requestId = ++greeksRequestIdRef.current;
 
         // Collect all option symbols that need Greeks (exclude permanently failed ones)
+        // Include LTP values from option chain to avoid additional API calls
         const symbolsToFetch = [];
         optionChain.chain.forEach(row => {
             if (row.ce?.symbol && !greeksData.has(row.ce.symbol) && !failedGreeksSymbolsRef.current.has(row.ce.symbol)) {
-                symbolsToFetch.push({ symbol: row.ce.symbol, exchange: underlying.exchange });
+                // Get live LTP or fall back to chain data
+                const liveCe = liveLTP.get(row.ce.symbol);
+                const ceLtp = liveCe?.ltp ?? row.ce?.ltp ?? 0;
+                symbolsToFetch.push({ 
+                    symbol: row.ce.symbol, 
+                    exchange: underlying.exchange,
+                    ltp: ceLtp  // Pass LTP to avoid rate limiting
+                });
             }
             if (row.pe?.symbol && !greeksData.has(row.pe.symbol) && !failedGreeksSymbolsRef.current.has(row.pe.symbol)) {
-                symbolsToFetch.push({ symbol: row.pe.symbol, exchange: underlying.exchange });
+                // Get live LTP or fall back to chain data
+                const livePe = liveLTP.get(row.pe.symbol);
+                const peLtp = livePe?.ltp ?? row.pe?.ltp ?? 0;
+                symbolsToFetch.push({ 
+                    symbol: row.pe.symbol, 
+                    exchange: underlying.exchange,
+                    ltp: peLtp  // Pass LTP to avoid rate limiting
+                });
             }
         });
 
@@ -420,9 +436,14 @@ const OptionChainModal = ({ isOpen, onClose, onSelectOption, initialSymbol }) =>
             }
         };
 
+        // Get spot price from live data or option chain
+        const liveSpot = liveLTP.get(underlying.symbol);
+        const spotPrice = liveSpot?.ltp ?? optionChain?.underlyingLTP ?? 0;
+
         try {
             // Single batch API call instead of many individual calls
-            const response = await fetchMultiOptionGreeks(symbolsToFetch);
+            // Pass spot_price to avoid fetching underlying quote
+            const response = await fetchMultiOptionGreeks(symbolsToFetch, { spot_price: spotPrice });
 
             // Check if request is still current
             if (requestId !== greeksRequestIdRef.current) {
@@ -478,7 +499,7 @@ const OptionChainModal = ({ isOpen, onClose, onSelectOption, initialSymbol }) =>
                 setGreeksLoading(false);
             }
         }
-    }, [optionChain?.chain, underlying.exchange, greeksData]);
+    }, [optionChain?.chain, underlying.exchange, underlying.symbol, greeksData, liveLTP, optionChain?.underlyingLTP]);
 
     // Retry mechanism for failed Greeks - auto-retries missing symbols after delay
     // Only retries symbols that haven't been marked as permanently failed
@@ -486,13 +507,18 @@ const OptionChainModal = ({ isOpen, onClose, onSelectOption, initialSymbol }) =>
         if (!optionChain?.chain?.length) return;
 
         // Find symbols still missing Greeks data (exclude permanently failed ones)
+        // Include LTP values to avoid rate limiting
         const missingSymbols = [];
         optionChain.chain.forEach(row => {
             if (row.ce?.symbol && !greeksData.has(row.ce.symbol) && !failedGreeksSymbolsRef.current.has(row.ce.symbol)) {
-                missingSymbols.push({ symbol: row.ce.symbol, exchange: underlying.exchange });
+                const liveCe = liveLTP.get(row.ce.symbol);
+                const ceLtp = liveCe?.ltp ?? row.ce?.ltp ?? 0;
+                missingSymbols.push({ symbol: row.ce.symbol, exchange: underlying.exchange, ltp: ceLtp });
             }
             if (row.pe?.symbol && !greeksData.has(row.pe.symbol) && !failedGreeksSymbolsRef.current.has(row.pe.symbol)) {
-                missingSymbols.push({ symbol: row.pe.symbol, exchange: underlying.exchange });
+                const livePe = liveLTP.get(row.pe.symbol);
+                const peLtp = livePe?.ltp ?? row.pe?.ltp ?? 0;
+                missingSymbols.push({ symbol: row.pe.symbol, exchange: underlying.exchange, ltp: peLtp });
             }
         });
 
@@ -519,9 +545,13 @@ const OptionChainModal = ({ isOpen, onClose, onSelectOption, initialSymbol }) =>
             }
         };
 
+        // Get spot price from live data or option chain
+        const liveSpot = liveLTP.get(underlying.symbol);
+        const spotPrice = liveSpot?.ltp ?? optionChain?.underlyingLTP ?? 0;
+
         const requestId = greeksRequestIdRef.current;
         try {
-            const response = await fetchMultiOptionGreeks(missingSymbols);
+            const response = await fetchMultiOptionGreeks(missingSymbols, { spot_price: spotPrice });
 
             if (requestId !== greeksRequestIdRef.current) return;
 
@@ -572,7 +602,7 @@ const OptionChainModal = ({ isOpen, onClose, onSelectOption, initialSymbol }) =>
                 setGreeksLoading(false);
             }
         }
-    }, [optionChain?.chain, underlying.exchange, greeksData]);
+    }, [optionChain?.chain, underlying.exchange, underlying.symbol, greeksData, liveLTP, optionChain?.underlyingLTP]);
 
 
     // Trigger Greeks fetch when switching to greeks view

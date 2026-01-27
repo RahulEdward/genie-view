@@ -612,8 +612,36 @@ export const fetchOptionGreeks = async (symbol, exchange = 'NFO') => {
  */
 export const fetchMultiOptionGreeks = async (symbols, options = {}) => {
     try {
-        const data = await callBackendAPI('/multioptiongreeks', { symbols, ...options });
-        return data;
+        // callBackendAPI returns data.data from the response
+        // For multioptiongreeks, the backend returns {status, data: [...], summary: {...}}
+        // So we need to call the API directly to get the full response
+        const apiKey = localStorage.getItem('aa_apiKey');
+        if (!apiKey) {
+            throw new Error('Not authenticated');
+        }
+        
+        const apiBase = localStorage.getItem('aa_backendUrl') || 'http://localhost:8000/api/v1';
+        const response = await fetch(`${apiBase}/multioptiongreeks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ apikey: apiKey, symbols, ...options })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.status !== 'success') {
+            throw new Error(result.message || 'API call failed');
+        }
+        
+        // Return the full response with data and summary
+        return {
+            data: result.data || [],
+            summary: result.summary || {}
+        };
     } catch (error) {
         logger.error('[OptionChain] Batch Greeks error:', error.message);
         return { data: [], summary: {} };

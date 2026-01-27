@@ -36,6 +36,7 @@ class SharedWebSocketManager {
         this._nextId = 1;
         this._reconnectTimer = null;
         this._authenticated = false;
+        this._manualClose = false; // Track if close was intentional
     }
 
     /**
@@ -105,6 +106,8 @@ class SharedWebSocketManager {
                 clearTimeout(this._reconnectTimer);
                 this._reconnectTimer = null;
             }
+            // Set manual close flag to prevent auto-reconnect
+            this._manualClose = true;
             this._ws.close();
             this._ws = null;
         }
@@ -113,6 +116,9 @@ class SharedWebSocketManager {
     _ensureConnected() {
         if (this._ws && this._ws.readyState === WebSocket.OPEN) return;
         if (this._ws && this._ws.readyState === WebSocket.CONNECTING) return;
+
+        // Reset manual close flag when creating new connection
+        this._manualClose = false;
 
         const apiKey = localStorage.getItem('aa_apikey');
         
@@ -187,18 +193,21 @@ class SharedWebSocketManager {
             }
         };
 
-        this._ws.onclose = () => {
-            logger.debug('[SharedWS] Disconnected');
+        this._ws.onclose = (event) => {
+            logger.debug('[SharedWS] Disconnected, code:', event?.code, 'reason:', event?.reason);
             this._authenticated = false;
             setConnectionStatus(ConnectionState.DISCONNECTED);
             // Auto-reconnect after 2 seconds if we still have subscribers
-            if (this._subscribers.size > 0) {
+            if (this._subscribers.size > 0 && !this._manualClose) {
                 this._reconnectTimer = setTimeout(() => this._ensureConnected(), 2000);
             }
         };
 
         this._ws.onerror = (err) => {
-            console.error('[SharedWS] Error:', err);
+            // Only log non-connection errors (ECONNABORTED, ECONNRESET are expected during close)
+            if (err && err.message && !err.message.includes('ECONNABORTED') && !err.message.includes('ECONNRESET')) {
+                console.error('[SharedWS] Error:', err);
+            }
         };
     }
 

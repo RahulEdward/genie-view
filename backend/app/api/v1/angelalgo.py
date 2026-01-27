@@ -641,7 +641,12 @@ async def get_multi_option_greeks(
     request: Request,
     db: AsyncSession = Depends(get_db)
 ):
-    """Get option Greeks for multiple options (OpenAlgo compatibility)"""
+    """
+    Get option Greeks for multiple options (OpenAlgo compatibility)
+    
+    Accepts option LTP values directly to avoid rate limiting.
+    If LTP is not provided, will attempt to fetch from broker API.
+    """
     try:
         body = await request.json()
     except Exception:
@@ -650,6 +655,7 @@ async def get_multi_option_greeks(
     api_key = body.get("apikey")
     symbols = body.get("symbols", [])
     interest_rate = body.get("interest_rate", 0.07)
+    spot_price = body.get("spot_price")  # Optional: underlying spot price
     
     if not api_key:
         raise HTTPException(
@@ -690,11 +696,9 @@ async def get_multi_option_greeks(
         for sym_info in symbols:
             symbol = sym_info.get("symbol", "")
             exchange = sym_info.get("exchange", "NFO")
+            option_ltp = sym_info.get("ltp")  # Accept LTP directly from frontend
             
             try:
-                # Get option quote
-                quote = await broker.get_quote(symbol, exchange)
-                
                 # Parse option details
                 option_info = _parse_option_symbol(symbol)
                 
@@ -707,14 +711,54 @@ async def get_multi_option_greeks(
                     failed_count += 1
                     continue
                 
-                # Get underlying price (cached)
+                # Get underlying price (cached or from request)
                 underlying = option_info["underlying"]
-                if underlying not in underlying_prices:
-                    underlying_exchange = "NSE" if exchange == "NFO" else "BSE"
-                    underlying_quote = await broker.get_quote(underlying, underlying_exchange)
-                    underlying_prices[underlying] = underlying_quote.ltp
+                if spot_price and underlying in ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]:
+                    # Use provided spot price for index options
+                    spot = spot_price
+                elif underlying not in underlying_prices:
+                    try:
+                        underlying_exchange = "NSE" if exchange == "NFO" else "BSE"
+                        underlying_quote = await broker.get_quote(underlying, underlying_exchange)
+                        underlying_prices[underlying] = underlying_quote.ltp
+                    except Exception as e:
+                        logger.warning(f"Could not fetch underlying {underlying}: {e}")
+                        # Use a default or skip
+                        results.append({
+                            "symbol": symbol,
+                            "status": "error",
+                            "error": f"Could not fetch underlying price: {e}"
+                        })
+                        failed_count += 1
+                        continue
                 
-                spot = underlying_prices[underlying]
+                spot = underlying_prices.get(underlying, spot_price or 0)
+                
+                if spot <= 0:
+                    results.append({
+                        "symbol": symbol,
+                        "status": "error",
+                        "error": "No spot price available"
+                    })
+                    failed_count += 1
+                    continue
+                
+                # Get option LTP - use provided value or fetch
+                if option_ltp is not None and option_ltp > 0:
+                    ltp = option_ltp
+                else:
+                    try:
+                        quote = await broker.get_quote(symbol, exchange)
+                        ltp = quote.ltp
+                    except Exception as e:
+                        logger.warning(f"Could not fetch quote for {symbol}: {e}")
+                        results.append({
+                            "symbol": symbol,
+                            "status": "error",
+                            "error": f"Could not fetch option quote: {e}"
+                        })
+                        failed_count += 1
+                        continue
                 
                 # Calculate Greeks
                 greeks = calculate_greeks(
@@ -723,7 +767,7 @@ async def get_multi_option_greeks(
                     expiry_days=option_info["days_to_expiry"],
                     rate=interest_rate,
                     option_type=option_info["option_type"],
-                    option_price=quote.ltp
+                    option_price=ltp
                 )
                 
                 results.append({
@@ -736,7 +780,7 @@ async def get_multi_option_greeks(
                     "expiry_date": option_info["expiry"],
                     "days_to_expiry": option_info["days_to_expiry"],
                     "spot_price": spot,
-                    "option_price": quote.ltp,
+                    "option_price": ltp,
                     "implied_volatility": greeks.iv,
                     "greeks": {
                         "delta": greeks.delta,
